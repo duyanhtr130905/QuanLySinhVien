@@ -1,0 +1,57 @@
+import {
+  buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate, formatStudentSex,
+  getPageScopedSelectionChange, getSafeHttpUrl, getStudentSortOrder
+} from './studentUtils'
+
+describe('student sorting', () => {
+  test('maps student columns to backend order aliases', () => {
+    expect(buildStudentOrder([
+      { columnKey: 'fullname', order: 'ascend' },
+      { columnKey: 'code', order: 'descend' },
+    ])).toBe('fn:0-co:1')
+    expect(getStudentSortOrder('fn:0-co:1', 'fullname')).toBe('ascend')
+    expect(getStudentSortOrder('fn:0-co:1', 'code')).toBe('descend')
+  })
+
+  test('drops unsupported columns and cleared sort values', () => {
+    expect(buildStudentOrder([
+      { columnKey: 'email', order: 'ascend' },
+      { columnKey: 'code', order: undefined },
+    ])).toBe('')
+  })
+})
+
+describe('student shared helpers', () => {
+  test('formats backend date and sex values consistently', () => {
+    expect(formatStudentDate('2004-01-15T00:00:00.000Z')).toBe('15/01/2004')
+    expect(formatStudentDate('invalid')).toBe('-')
+    expect(formatStudentSex(false)).toBe('Nữ')
+    expect(formatStudentSex('true')).toBe('Nam')
+  })
+
+  test('accepts only safe HTTP image and link URLs', () => {
+    expect(getSafeHttpUrl('https://example.com/a.png')).toBe('https://example.com/a.png')
+    expect(getSafeHttpUrl('javascript:alert(1)')).toBeNull()
+  })
+
+  test('pins selected records without duplicating current-page records', () => {
+    const selectedRecordsById = {
+      1: { id: 1, fullname: 'Trang trước' },
+      2: { id: 2, fullname: 'Trang hiện tại' },
+    }
+    expect(buildDisplayedStudentRecords(
+      [{ id: 2 }, { id: 3 }],
+      [1, 2],
+      selectedRecordsById
+    ).map(record => record.id)).toEqual([1, 2, 3])
+  })
+
+  test('select-all changes only records in the current API page', () => {
+    expect(getPageScopedSelectionChange({
+      apiRecords: [{ id: 2 }, { id: 3 }],
+      changeRows: [{ id: 1 }, { id: 2 }, { id: 3 }],
+      selected: false,
+      selectedRowKeys: [1, 2, 3],
+    }).keys).toEqual([1])
+  })
+})

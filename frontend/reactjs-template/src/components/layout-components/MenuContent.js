@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Menu, Grid } from "antd";
+import { Menu, Grid, Tooltip } from "antd";
 import IntlMessage from "../util-components/IntlMessage";
 import Icon from "../util-components/Icon";
 import navigationConfig from "configs/NavigationConfig";
@@ -29,8 +29,13 @@ const setDefaultOpen = (key) => {
   return keyList;
 };
 
+const collapsedMenuLabels = {
+  'student-list': 'SV',
+  'class-list': 'L',
+}
+
 const SideNavContent = (props) => {
-	const { sideNavTheme, routeInfo, hideGroupTitle, localization, onMobileNavToggle } = props;
+	const { sideNavTheme, routeInfo, hideGroupTitle, localization, navCollapsed, onMobileNavToggle } = props;
 	const isMobile = !utils.getBreakPoint(useBreakpoint()).includes('lg')
 	const closeMobileNav = () => {
 		if (isMobile) {
@@ -41,8 +46,9 @@ const SideNavContent = (props) => {
     <Menu
       theme={sideNavTheme === SIDE_NAV_LIGHT ? "light" : "dark"}
       mode="inline"
+      inlineCollapsed={navCollapsed}
       style={{ height: "100%", borderRight: 0 }}
-      defaultSelectedKeys={[routeInfo?.key]}
+      selectedKeys={[routeInfo?.key]}
       defaultOpenKeys={setDefaultOpen(routeInfo?.key)}
       className={hideGroupTitle ? "hide-group-title" : ""}
     >
@@ -77,8 +83,20 @@ const SideNavContent = (props) => {
                 </SubMenu>
               ) : (
                 <Menu.Item key={subMenuFirst.key}>
-                  {subMenuFirst.icon ? <Icon type={subMenuFirst.icon} /> : null}
-                  <span>{setLocale(localization, subMenuFirst.title)}</span>
+                  {navCollapsed && collapsedMenuLabels[subMenuFirst.key] ? (
+                    <Tooltip title={setLocale(localization, subMenuFirst.title)} placement="right">
+                      <span className="student-menu-abbreviation">
+                        {collapsedMenuLabels[subMenuFirst.key]}
+                      </span>
+                    </Tooltip>
+                  ) : navCollapsed && subMenuFirst.icon ? (
+                    <Tooltip title={setLocale(localization, subMenuFirst.title)} placement="right">
+                      <span><Icon type={subMenuFirst.icon} /></span>
+                    </Tooltip>
+                  ) : subMenuFirst.icon ? <Icon type={subMenuFirst.icon} /> : null}
+                  {!navCollapsed || !collapsedMenuLabels[subMenuFirst.key] ? (
+                    <span>{setLocale(localization, subMenuFirst.title)}</span>
+                  ) : null}
                   <Link onClick={() => closeMobileNav()} to={subMenuFirst.path} />
                 </Menu.Item>
               )

@@ -1,7 +1,6 @@
 import React, { Component } from "react";
 import { Table } from "antd";
-import { DndProvider, DragSource, DropTarget } from "react-dnd";
-import { HTML5Backend } from "react-dnd-html5-backend";
+import { DragSource, DropTarget } from "react-dnd";
 import update from "immutability-helper";
 
 let dragingIndex = -1;
@@ -140,17 +139,15 @@ export class DragSorting extends Component {
 
   render() {
     return (
-      <DndProvider backend={HTML5Backend}>
-        <Table
-          columns={columns}
-          dataSource={this.state.data}
-          components={this.components}
-          onRow={(record, index) => ({
-            index,
-            moveRow: this.moveRow
-          })}
-        />
-      </DndProvider>
+      <Table
+        columns={columns}
+        dataSource={this.state.data}
+        components={this.components}
+        onRow={(record, index) => ({
+          index,
+          moveRow: this.moveRow
+        })}
+      />
     );
   }
 }

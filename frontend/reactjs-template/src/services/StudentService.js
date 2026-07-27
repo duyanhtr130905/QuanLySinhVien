@@ -19,7 +19,7 @@ StudentService.getById = function (id) {
 
 StudentService.create = function (formData) {
   return fetch({
-    url: '/student',
+    url: '/student/',
     method: 'post',
     data: formData,
   })
@@ -42,7 +42,7 @@ StudentService.destroy = function (id) {
 
 StudentService.massDestroy = function (idlist) {
   return fetch({
-    url: '/student',
+    url: '/student/',
     method: 'delete',
     data: { idlist }
   })
@@ -56,12 +56,21 @@ StudentService.massCopy = function (idlist) {
   })
 }
 
+StudentService.importStudents = function (formData) {
+  return fetch({
+    url: '/student/import',
+    method: 'post',
+    data: formData,
+  })
+}
+
 StudentService.massExport = function (idlist, type) {
   return fetch({
     url: '/student/export',
     method: 'post',
     data: { idlist, type },
-    responseType: 'blob'
+    responseType: 'blob',
+    returnFullResponse: true,
   })
 }
 
@@ -69,6 +78,16 @@ StudentService.copyOne = function (id) {
   return fetch({
     url: `/student/copy/${id}`,
     method: 'post'
+  })
+}
+
+StudentService.exportOne = function (id, type) {
+  return fetch({
+    url: `/student/export/${id}`,
+    method: 'get',
+    params: { type },
+    responseType: 'blob',
+    returnFullResponse: true,
   })
 }
 

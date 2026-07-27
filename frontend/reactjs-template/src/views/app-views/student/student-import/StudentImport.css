@@ -1,0 +1,135 @@
+.student-import-page {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.student-import-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 14px 0 20px;
+}
+
+.student-import-header h1 {
+  margin: 0;
+  color: #1a3353;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.student-import-header p {
+  margin: 6px 0 0;
+  color: #72849a;
+}
+
+.student-import-card {
+  height: 100%;
+}
+
+.student-import-note,
+.student-import-help {
+  color: #72849a;
+  font-size: 13px;
+}
+
+.student-import-template-actions,
+.student-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.student-import-template-actions .ant-select {
+  width: 130px;
+}
+
+.student-import-help {
+  margin-top: 10px;
+}
+
+.student-import-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #dfe7f3;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.student-import-file-icon {
+  color: #3f7bf2;
+  font-size: 25px;
+}
+
+.student-import-file-meta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.student-import-file-meta strong,
+.student-import-file-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-import-file-meta span {
+  margin-top: 3px;
+  color: #72849a;
+  font-size: 12px;
+}
+
+.student-import-empty {
+  margin: 22px 0 6px;
+}
+
+.student-import-actions {
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.student-import-results {
+  display: grid;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.student-import-results .ant-alert {
+  margin-top: 12px;
+}
+
+@media (max-width: 575px) {
+  .student-import-header {
+    flex-direction: column;
+  }
+
+  .student-import-header > .ant-btn {
+    width: 100%;
+  }
+
+  .student-import-template-actions,
+  .student-import-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .student-import-template-actions .ant-select,
+  .student-import-template-actions .ant-btn,
+  .student-import-actions .ant-btn {
+    width: 100%;
+  }
+
+  .student-import-file {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .student-import-file-meta {
+    flex-basis: calc(100% - 40px);
+  }
+}

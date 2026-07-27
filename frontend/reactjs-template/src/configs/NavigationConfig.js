@@ -1,5 +1,4 @@
 import { 
-  DashboardOutlined, 
   AppstoreOutlined,
   FileTextOutlined,
   PieChartOutlined,
@@ -7,7 +6,6 @@ import {
   AntDesignOutlined,
   SafetyOutlined,
   StopOutlined,
-  DotChartOutlined,
   MailOutlined,
   MessageOutlined,
   CalendarOutlined,
@@ -20,11 +18,11 @@ import {
   CommentOutlined,
   RobotOutlined,
   PlusCircleOutlined,
-  FundOutlined,
   ShoppingCartOutlined,
   BookOutlined,
   FileUnknownOutlined,
-  ProfileOutlined
+  ProfileOutlined,
+  ApartmentOutlined
 } from '@ant-design/icons';
 import { APP_PREFIX_PATH, AUTH_PREFIX_PATH } from 'configs/AppConfig'
 
@@ -170,40 +168,6 @@ const extraNavTree = [
     ]
   }
 ]
-
-const dashBoardNavTree = [{
-  key: 'dashboards',
-  path: `${APP_PREFIX_PATH}/dashboards`,
-  title: 'sidenav.dashboard',
-  icon: DashboardOutlined,
-  breadcrumb: false,
-  submenu: [
-    {
-      key: 'dashboards-default',
-      path: `${APP_PREFIX_PATH}/dashboards/default`,
-      title: 'sidenav.dashboard.default',
-      icon: DashboardOutlined,
-      breadcrumb: false,
-      submenu: []
-    },
-    {
-      key: 'dashboards-analytic',
-      path: `${APP_PREFIX_PATH}/dashboards/analytic`,
-      title: 'sidenav.dashboard.analytic',
-      icon: DotChartOutlined,
-      breadcrumb: false,
-      submenu: []
-    },
-    {
-      key: 'dashboards-sales',
-      path: `${APP_PREFIX_PATH}/dashboards/sales`,
-      title: 'sidenav.dashboard.sales',
-      icon: FundOutlined,
-      breadcrumb: false,
-      submenu: []
-    }
-  ]
-}]
 
 const appsNavTree = [{
   key: 'apps',
@@ -946,16 +910,26 @@ const docsNavTree = [{
 
 const studentNavTree = [{
   key: 'student-management',
-  path: `${APP_PREFIX_PATH}/student`,
-  title: 'Quản lý Sinh viên',
+  path: `${APP_PREFIX_PATH}`,
+  title: 'Quản lý danh mục',
   icon: ProfileOutlined,
   breadcrumb: true,
   submenu: [
     {
       key: 'student-list',
       path: `${APP_PREFIX_PATH}/student/list`,
+      matchPrefix: `${APP_PREFIX_PATH}/student`,
       title: 'Sinh viên',
-      icon: '',
+      icon: ProfileOutlined,
+      breadcrumb: true,
+      submenu: []
+    },
+    {
+      key: 'class-list',
+      path: `${APP_PREFIX_PATH}/class/list`,
+      matchPrefix: `${APP_PREFIX_PATH}/class`,
+      title: 'Lớp',
+      icon: ApartmentOutlined,
       breadcrumb: true,
       submenu: []
     }
@@ -963,7 +937,6 @@ const studentNavTree = [{
 }]
 
 const navigationConfig = [
-  ...dashBoardNavTree,
   ...studentNavTree
 ]
 

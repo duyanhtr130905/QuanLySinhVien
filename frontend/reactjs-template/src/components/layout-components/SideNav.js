@@ -8,7 +8,7 @@ import MenuContent from './MenuContent'
 const { Sider } = Layout;
 
 export const SideNav = ({navCollapsed, sideNavTheme, routeInfo, hideGroupTitle, localization = true }) => {
-  const props = { sideNavTheme, routeInfo , hideGroupTitle, localization}
+  const props = { sideNavTheme, routeInfo, hideGroupTitle, localization, navCollapsed }
   return (
     <Sider 
       className={`side-nav ${sideNavTheme === SIDE_NAV_DARK? 'side-nav-dark' : ''}`} 

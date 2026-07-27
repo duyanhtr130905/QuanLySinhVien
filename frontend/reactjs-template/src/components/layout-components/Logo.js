@@ -23,21 +23,6 @@ const getLogoWidthGutter = (props, isMobile) => {
   }
 }
 
-const getLogo = (props) => {
-  const { navCollapsed, logoType } = props;
-  if(logoType === 'light') {
-    if(navCollapsed) {
-      return '/img/logo-sm-white.png'
-    }
-    return '/img/logo-white.png'
-  }
-
-  if (navCollapsed) {
-    return '/img/logo-sm.png'
-  }
-  return '/img/logo.png'
-}
-
 const getLogoDisplay = (isMobile, mobileLogo) => {
   if(isMobile && !mobileLogo) {
     return 'd-none'
@@ -52,7 +37,9 @@ export const Logo = (props) => {
     <div
       className={getLogoDisplay(isMobile, props.mobileLogo)} 
       style={{width: `${getLogoWidthGutter(props, isMobile)}`}}>
-      <img src={getLogo(props)} alt={`${APP_NAME} logo`}/>
+      <span className="logo-brand" aria-label={`${APP_NAME} logo`}>
+        {props.navCollapsed ? 'EM' : APP_NAME}
+      </span>
     </div>
   )
 }

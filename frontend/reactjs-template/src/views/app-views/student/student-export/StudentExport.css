@@ -1,0 +1,134 @@
+.student-export-page .student-export-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.student-export-actions-right,
+.student-export-config-row,
+.student-export-column-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.student-export-breadcrumb {
+  margin-bottom: 16px;
+}
+
+.student-export-print-area > h2 {
+  margin-bottom: 16px;
+}
+
+.student-export-config {
+  margin-bottom: 16px;
+}
+
+.student-export-template-select {
+  width: 280px;
+}
+
+.student-export-config-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.student-export-config-row label,
+.student-export-column-control > span {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(0, 0, 0, .85);
+  font-weight: 500;
+}
+
+.student-export-column-control {
+  align-items: flex-end;
+}
+
+.student-export-column-chooser {
+  width: 230px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, .16);
+}
+
+.student-export-column-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.student-export-column-list .ant-checkbox-wrapper {
+  margin-left: 0;
+}
+
+.student-export-column-popover .ant-popover-inner-content {
+  padding: 0;
+}
+
+.student-export-loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+@media (max-width: 575px) {
+  .student-export-page .student-export-actions,
+  .student-export-actions-right {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .student-export-page .student-export-actions > .ant-btn,
+  .student-export-actions-right .ant-btn,
+  .student-export-actions-right .ant-dropdown-trigger,
+  .student-export-template-select,
+  .student-export-column-control {
+    width: 100%;
+  }
+
+  .student-export-config-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .student-export-column-control {
+    align-items: stretch;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .student-export-print-area,
+  .student-export-print-area * {
+    visibility: visible !important;
+  }
+
+  .student-export-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  .student-export-print-area .no-print,
+  .no-print {
+    display: none !important;
+  }
+
+  .student-export-preview {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .student-export-preview .ant-card-head {
+    padding-left: 0;
+  }
+}

@@ -38,6 +38,7 @@ service.interceptors.request.use(config => {
 
 // API respone interceptor
 service.interceptors.response.use( (response) => {
+	if (response.config?.returnFullResponse) return response
 	return response.data
 }, (error) => {
 

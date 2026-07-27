@@ -1,0 +1,75 @@
+.class-list-page h1,
+.class-form-page h1,
+.class-copy-result-page h1,
+.class-unsupported-page h1 {
+  margin: 16px 0 20px;
+}
+
+.class-list-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.class-list-toolbar h1 {
+  margin: 0;
+}
+
+.class-list-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.class-list-toolbar-actions .ant-input-search {
+  width: 320px;
+}
+
+.class-selection-summary {
+  margin: 12px 0;
+  color: #455560;
+}
+
+.class-list-pagination {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  padding: 16px;
+}
+
+.class-form-card {
+  max-width: 720px;
+}
+
+.class-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.class-copy-result-back,
+.class-unsupported-back {
+  margin-top: 16px;
+}
+
+@media (max-width: 991px) {
+  .class-list-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .class-list-toolbar-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .class-list-toolbar-actions .ant-input-search {
+    flex: 1 1 260px;
+    width: auto;
+  }
+}

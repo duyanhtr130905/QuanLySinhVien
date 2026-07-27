@@ -20,6 +20,11 @@ class Utils {
 		if( navTree.path === path ){
 		  return navTree;
 		}
+		if (navTree.matchPrefix && (
+			path === navTree.matchPrefix || path.startsWith(`${navTree.matchPrefix}/`)
+		)) {
+		  return navTree;
+		}
 		let route; 
 		for (let p in navTree) {
 		  if( navTree.hasOwnProperty(p) && typeof navTree[p] === 'object' ) {

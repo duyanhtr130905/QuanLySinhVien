@@ -1,7 +1,6 @@
 import React, { Component } from "react";
 import { Tabs } from "antd";
-import { DndProvider, DragSource, DropTarget } from "react-dnd";
-import { HTML5Backend } from "react-dnd-html5-backend";
+import { DragSource, DropTarget } from "react-dnd";
 
 const { TabPane } = Tabs;
 
@@ -116,11 +115,9 @@ class DraggableTabs extends React.Component {
     });
 
     return (
-      <DndProvider backend={HTML5Backend}>
-        <Tabs renderTabBar={this.renderTabBar} {...this.props}>
-          {orderTabs}
-        </Tabs>
-      </DndProvider>
+      <Tabs renderTabBar={this.renderTabBar} {...this.props}>
+        {orderTabs}
+      </Tabs>
     );
   }
 }

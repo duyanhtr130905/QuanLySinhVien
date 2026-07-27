@@ -25,7 +25,7 @@ export class Invoice extends Component {
 							<img src="/img/logo.png" alt=""/>
 							<address>
 								<p>
-									<span className="font-weight-semibold text-dark font-size-md">Emilus, Inc.</span><br />
+									<span className="font-weight-semibold text-dark font-size-md">EduManager, Inc.</span><br />
 									<span>9498 Harvard Street</span><br />
 									<span>Fairfield, Chicago Town 06824</span><br />
 									<abbr className="text-dark" title="Phone">Phone:</abbr>

@@ -1,0 +1,128 @@
+.student-create-page {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.student-create-heading {
+  margin: 12px 0 20px;
+  color: #1a3353;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.student-create-card .ant-card-body {
+  padding: 24px;
+}
+
+.student-create-card .ant-form-item-label > label {
+  color: #455560;
+  font-weight: 500;
+}
+
+.student-create-card .ant-picker,
+.student-create-card .ant-select {
+  width: 100%;
+}
+
+.student-create-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.student-create-color-row .ant-form-item {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.student-create-color-row .color-picker {
+  flex: 0 0 auto;
+}
+
+.student-create-color-row .color-picker-dropdown .color {
+  width: 88px;
+  height: 34px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.student-create-hobby-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.student-create-hobby-row > .ant-form-item {
+  flex: 1;
+}
+
+.student-create-hobby-add {
+  flex: 0 0 auto;
+  margin-top: 30px;
+}
+
+.student-create-upload-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.student-create-upload-preview img {
+  width: 104px;
+  height: 132px;
+  border: 1px solid #e6ebf1;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.student-create-upload-fallback {
+  display: flex;
+  width: 104px;
+  height: 132px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e6ebf1;
+  border-radius: 6px;
+  background: #f7f7f8;
+  color: #72849a;
+  text-align: center;
+}
+
+.student-create-upload-name {
+  max-width: 240px;
+  overflow: hidden;
+  color: #455560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+@media (max-width: 575px) {
+  .student-create-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .student-create-heading {
+    font-size: 21px;
+  }
+
+  .student-create-actions {
+    flex-direction: column-reverse;
+  }
+
+  .student-create-actions .ant-btn {
+    width: 100%;
+  }
+
+  .student-create-hobby-add {
+    margin-top: 30px;
+  }
+}
