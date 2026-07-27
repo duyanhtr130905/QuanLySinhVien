@@ -1,8 +1,10 @@
 const classService = require('./class.service');
 const { successResponse, errorResponse } = require('../../utils/response');
+const { parseFile, buildFile } = require('../../utils/fileFormat');
 const asyncHandler = require('../../core/http/asyncHandler');
 const {
   createGetAllHandler,
+  createGetByIdHandler,
   createGetByPageHandler,
   createCopyOneHandler,
   createMassCopyHandler,
@@ -30,6 +32,25 @@ const getByPage = createGetByPageHandler({
   requestParser: (req) => [validator.parseGetByPage(req.query)],
   successMessage: 'Lấy danh sách lớp theo trang thành công',
   fallbackCode: 'C600',
+});
+
+const getById = createGetByIdHandler({
+  service: (...args) => classService.getOneById(...args),
+  requestParser: (req) => [validator.parseGetById(req.params.id)],
+  successMessage: 'L\u1ea5y chi ti\u1ebft l\u1edbp th\u00e0nh c\u00f4ng',
+  fallbackCode: 'D600',
+  notFound: errors.getById.notFound,
+});
+
+const getStudents = createGetByPageHandler({
+  service: (...args) => classService.getStudentsByClass(...args),
+  requestParser: (req) => [
+    validator.parseClassStudentsId(req.params.id),
+    validator.parseClassStudentsPageQuery(req.query),
+  ],
+  successMessage: 'L\u1ea5y danh s\u00e1ch sinh vi\u00ean trong l\u1edbp th\u00e0nh c\u00f4ng',
+  fallbackCode: 'L600',
+  notFound: errors.students.classNotFound,
 });
 
 // POST /class
@@ -94,11 +115,11 @@ const massDelete = asyncHandler(async (req, res) => {
     if (blockedIds.length > 0) {
       return successResponse(
         res,
-        { ids: deletedIds },
+        { deletedIds, blockedIds },
         `Đã xóa ${deletedIds.length} lớp. Không thể xóa ${blockedIds.length} lớp vì còn sinh viên liên kết (ids: ${blockedIds.join(', ')})`
       );
     }
-    return successResponse(res, { ids: deletedIds }, 'Xóa các lớp thành công');
+    return successResponse(res, { deletedIds, blockedIds }, 'Xóa các lớp thành công');
   } catch (error) {
     if (sendExpectedError(res, error)) return undefined;
     error.fallbackCode = 'I600';
@@ -107,6 +128,110 @@ const massDelete = asyncHandler(async (req, res) => {
 });
 
 // POST /class/copy/:id
+const assignStudents = asyncHandler(async (req, res) => {
+  try {
+    const classId = validator.parseClassStudentsId(req.params.id);
+    const studentIds = validator.parseStudentIds(req.body.studentIds);
+    const assignedIds = await classService.assignStudents(classId, studentIds);
+    return successResponse(res, { studentIds: assignedIds }, 'Thêm sinh viên vào lớp thành công');
+  } catch (error) {
+    if (sendExpectedError(res, error)) return undefined;
+    error.fallbackCode = 'L600';
+    throw error;
+  }
+});
+
+const removeStudent = asyncHandler(async (req, res) => {
+  try {
+    const classId = validator.parseClassStudentsId(req.params.id);
+    const studentId = validator.parseClassStudentId(req.params.studentId);
+    const data = await classService.removeStudent(classId, studentId);
+    return successResponse(res, data, 'Loại sinh viên khỏi lớp thành công');
+  } catch (error) {
+    if (sendExpectedError(res, error)) return undefined;
+    error.fallbackCode = 'L600';
+    throw error;
+  }
+});
+
+const importClasses = asyncHandler(async (req, res) => {
+  try {
+    if (!req.file) return errorResponse(res, errors.import.invalidFile.statusCode, errors.import.invalidFile.errorCode, 'Không tìm thấy file upload');
+    const extension = req.file.originalname.split('.').pop().toLowerCase();
+    let rows;
+    try {
+      rows = await parseFile(req.file.buffer, extension);
+    } catch (error) {
+      if (error.message === 'UNSUPPORTED_FORMAT') {
+        return errorResponse(res, errors.import.unsupportedFormat.statusCode, errors.import.unsupportedFormat.errorCode, errors.import.unsupportedFormat.message);
+      }
+      return errorResponse(res, errors.import.invalidFile.statusCode, errors.import.invalidFile.errorCode, `Không đọc được dữ liệu từ file: ${error.message}`);
+    }
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return errorResponse(res, errors.import.invalidFile.statusCode, errors.import.invalidFile.errorCode, 'File không có dữ liệu');
+    }
+
+    const created = [];
+    const failed = [];
+    for (let index = 0; index < rows.length; index += 1) {
+      const validation = validator.validateImportRow(rows[index] || {});
+      if (validation.error) {
+        failed.push({ row: index + 2, reason: validation.error });
+        continue;
+      }
+      try {
+        created.push(await classService.store(validation.value));
+      } catch (error) {
+        failed.push({
+          row: index + 2,
+          reason: error.code === '23505' ? errors.store.duplicate.message : (error.message || 'Lỗi không xác định'),
+        });
+      }
+    }
+    return successResponse(res, { created, failed }, `Import thành công ${created.length} dòng, lỗi ${failed.length} dòng`);
+  } catch (error) {
+    error.fallbackCode = 'J600';
+    throw error;
+  }
+});
+
+const exportOne = asyncHandler(async (req, res) => {
+  try {
+    const id = validator.parseExportId(req.params.id);
+    const type = (req.query.type || 'xlsx').toLowerCase();
+    if (!validator.isValidExportType(type)) {
+      return errorResponse(res, errors.export.invalid.statusCode, errors.export.invalid.errorCode, errors.export.invalid.message);
+    }
+    const classRecord = await classService.getOneForExport(id);
+    if (!classRecord) return errorResponse(res, errors.export.notFound.statusCode, errors.export.notFound.errorCode, errors.export.notFound.message);
+    const { buffer, contentType, extension } = buildFile([classRecord], type);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="class-${id}.${extension}"`);
+    return res.send(buffer);
+  } catch (error) {
+    error.fallbackCode = 'K600';
+    throw error;
+  }
+});
+
+const massExport = asyncHandler(async (req, res) => {
+  try {
+    const type = (req.body.type || 'xlsx').toLowerCase();
+    const idlist = validator.parseExportIds(req.body.idlist);
+    if (!validator.isValidExportType(type)) {
+      return errorResponse(res, errors.export.invalid.statusCode, errors.export.invalid.errorCode, errors.export.invalid.message);
+    }
+    const rows = await classService.getManyForExport(idlist);
+    const { buffer, contentType, extension } = buildFile(rows, type);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="classes-export.${extension}"`);
+    return res.send(buffer);
+  } catch (error) {
+    error.fallbackCode = 'K600';
+    throw error;
+  }
+});
+
 const copyOne = createCopyOneHandler({
   service: (...args) => classService.copyOne(...args),
   requestParser: (req) => [validator.parseCopyOneId(req.params.id)],
@@ -134,10 +259,17 @@ const massCopy = createMassCopyHandler({
 module.exports = {
   getAll,
   getByPage,
+  getById,
+  getStudents,
   store,
   update,
   destroy,
   massDelete,
+  assignStudents,
+  removeStudent,
   copyOne,
   massCopy,
+  importClasses,
+  exportOne,
+  massExport,
 };

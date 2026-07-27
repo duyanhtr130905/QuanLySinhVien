@@ -26,6 +26,7 @@ const createListRepository = ({
   baseWhereClause = '',
   deletedFilter = '',
   defaultOrder = 'ORDER BY id ASC',
+  additionalSelect = '',
   rowMapper = (row) => row,
 }) => {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('pool.query là bắt buộc');
@@ -42,7 +43,7 @@ const createListRepository = ({
   const getAll = async (columnlist) => {
     const columns = getColumns(columnlist);
     const whereClause = baseConditions.length ? `WHERE ${baseConditions.join(' AND ')}` : '';
-    const result = await pool.query(`SELECT ${columns} FROM ${tableName} ${whereClause} ${defaultOrder}`);
+    const result = await pool.query(`SELECT ${columns}${additionalSelect} FROM ${tableName} ${whereClause} ${defaultOrder}`);
     return result.rows.map(rowMapper);
   };
 
@@ -78,7 +79,7 @@ const createListRepository = ({
     queryParams.push(offset);
 
     const dataSql = `
-      SELECT ${columns}
+      SELECT ${columns}${additionalSelect}
       FROM ${tableName}
       ${whereClause}
       ORDER BY ${toplistClause} ${orderBy.replace('ORDER BY ', '')}

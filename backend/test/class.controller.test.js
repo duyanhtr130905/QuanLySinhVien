@@ -2,10 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadController, makeReq, makeRes, expectApiResponse, makeNext } = require('./controllerTestHelpers');
 
-const controllerFor = (serviceMock) => loadController({
+const AppError = require('../src/core/http/AppError');
+
+const controllerFor = (serviceMock, fileFormatMock) => loadController({
   controller: '../src/modules/class/class.controller.js',
   service: '../src/modules/class/class.service.js',
   serviceMock,
+  dependencies: fileFormatMock ? { '../src/utils/fileFormat.js': fileFormatMock } : {},
 });
 
 test('class.getAll returns the service payload and forwards columnlist', async () => {
@@ -64,13 +67,13 @@ test('class.store returns its current success contract and maps duplicate code',
   expectApiResponse(duplicateRes, 409, 'E603', 'Mã lớp (code) đã tồn tại', null);
 });
 
-test('class.update continues to accept and forward code in its partial update body', async () => {
+test('class.update ignores code and forwards only mutable fields', async () => {
   const calls = [];
   const controller = controllerFor({ update: async (...args) => { calls.push(args); return { id: 7 }; } });
   const res = makeRes();
   await controller.update(makeReq({ params: { id: '7' }, body: { code: 'C02', description: 'new' } }), res, makeNext());
   expectApiResponse(res, 200, '200', 'Cập nhật lớp thành công', { id: 7 });
-  assert.deepEqual(calls, [[7, { code: 'C02', name: undefined, description: 'new' }]]);
+  assert.deepEqual(calls, [[7, { code: undefined, name: undefined, description: 'new' }]]);
 });
 
 test('class.destroy distinguishes a missing class from an FK-blocked class', async () => {
@@ -90,7 +93,7 @@ test('class.massDelete keeps a partial delete as a 200 response', async () => {
   const controller = controllerFor({ massDelete: async (...args) => { calls.push(args); return { deletedIds: [1], blockedIds: [2, 3] }; } });
   const res = makeRes();
   await controller.massDelete(makeReq({ body: { ids: [1, 2, 3] } }), res, makeNext());
-  expectApiResponse(res, 200, '200', 'Đã xóa 1 lớp. Không thể xóa 2 lớp vì còn sinh viên liên kết (ids: 2, 3)', { ids: [1] });
+  expectApiResponse(res, 200, '200', 'Đã xóa 1 lớp. Không thể xóa 2 lớp vì còn sinh viên liên kết (ids: 2, 3)', { deletedIds: [1], blockedIds: [2, 3] });
   assert.deepEqual(calls, [[[1, 2, 3]]]);
 });
 

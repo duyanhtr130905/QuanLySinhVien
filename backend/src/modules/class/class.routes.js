@@ -1,35 +1,40 @@
 const express = require('express');
-const router = express.Router();
+const multer = require('multer');
+const { errorResponse } = require('../../utils/response');
 const controller = require('./class.controller');
 
-// ============================================================
-// QUAN TRỌNG: Các route có path cố định (như /delete, /copy, /page)
-// phải được khai báo TRƯỚC route có :id để tránh Express match nhầm.
-// ============================================================
+const router = express.Router();
+const uploadDataFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
-// Phân trang
+const handleImportUploadError = (err, req, res, next) => {
+  if (err && err.code === 'LIMIT_FILE_SIZE') {
+    return errorResponse(res, 400, 'J604', 'File không được vượt quá 10MB');
+  }
+  if (err) return next(err);
+  return next();
+};
+
+// Fixed paths are declared before /:id routes.
 router.get('/page', controller.getByPage);
 router.get('/page/:init', controller.getByPage);
-
-// Xóa nhiều (path cố định /delete phải trước /:id)
 router.delete('/delete', controller.massDelete);
-
-// Sao chép nhiều (path cố định /copy phải trước /copy/:id)
 router.post('/copy', controller.massCopy);
-
-// Sao chép 1 lớp
 router.post('/copy/:id', controller.copyOne);
+router.post('/import', uploadDataFile.single('file'), handleImportUploadError, controller.importClasses);
+router.post('/export', controller.massExport);
+router.get('/export/:id', controller.exportOne);
 
-// Lấy toàn bộ danh sách
 router.get('/', controller.getAll);
-
-// Tạo mới
 router.post('/', controller.store);
 
-// Cập nhật
+router.get('/:id/students', controller.getStudents);
+router.post('/:id/students', controller.assignStudents);
+router.delete('/:id/students/:studentId', controller.removeStudent);
+router.get('/:id', controller.getById);
 router.put('/:id', controller.update);
-
-// Xóa 1 lớp
 router.delete('/:id', controller.destroy);
 
 module.exports = router;

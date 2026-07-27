@@ -1,6 +1,9 @@
 const pool = require('../../config/db');
 const createListRepository = require('../../core/database/createListRepository');
 const { generateUniqueValue, runMassCopyTransaction } = require('../../utils/copyHelpers');
+const { resolveColumns, resolveOrderBy } = require('../../utils/queryHelpers');
+const AppError = require('../../core/http/AppError');
+const errors = require('./class.errors');
 
 // ============================================================
 // DANH SÁCH CỘT HỢP LỆ — dùng để validate columnlist
@@ -24,7 +27,24 @@ const listRepository = createListRepository({
   columnAliases: COLUMN_ALIAS,
   searchColumns: ['code', 'name', 'description'],
   defaultOrder: 'ORDER BY id ASC',
+  additionalSelect: `,
+    (SELECT COUNT(*)
+     FROM tra_student student
+     WHERE student.class_id = tra_class.id AND student.deleted_at IS NULL) AS student_count`,
 });
+
+const STUDENT_COLUMNS = [
+  'id', 'code', 'fullname', 'dob', 'sex', 'homecity', 'address',
+  'hair_color', 'email', 'facebook', 'class_id', 'username',
+  'description', 'hobbies', 'attachment', 'created_at', 'updated_at',
+];
+const STUDENT_DEFAULT_SELECT = STUDENT_COLUMNS.join(', ');
+const STUDENT_COLUMN_ALIAS = {
+  id: 'id', co: 'code', fn: 'fullname', do: 'dob', sx: 'sex', hc: 'homecity',
+  ad: 'address', hr: 'hair_color', em: 'email', fb: 'facebook', ci: 'class_id',
+  un: 'username', de: 'description', ca: 'created_at', ua: 'updated_at',
+};
+const STUDENT_SEARCH_COLUMNS = ['code', 'fullname', 'email', 'username', 'description'];
 
 // ============================================================
 // 1. GET ALL
@@ -85,10 +105,6 @@ const update = async (id, body) => {
   const values = [];
   let paramIndex = 1;
 
-  if (body.code !== undefined) {
-    fields.push(`code = $${paramIndex++}`);
-    values.push(body.code);
-  }
   if (body.name !== undefined) {
     fields.push(`name = $${paramIndex++}`);
     values.push(body.name);
@@ -135,6 +151,125 @@ const destroy = async (id) => {
 const existsById = async (id) => {
   const result = await pool.query('SELECT 1 FROM tra_class WHERE id = $1', [id]);
   return result.rows.length > 0;
+};
+
+const getOneById = async (id) => {
+  const result = await pool.query(
+    `SELECT id, code, name, description, created_at, updated_at,
+      (SELECT COUNT(*) FROM tra_student student
+       WHERE student.class_id = tra_class.id AND student.deleted_at IS NULL) AS student_count
+     FROM tra_class
+     WHERE id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+};
+
+const getStudentsByClass = async (classId, { page, size, order, search, columnlist }) => {
+  const classExists = await existsById(classId);
+  if (!classExists) return null;
+
+  const columns = resolveColumns(STUDENT_COLUMNS, STUDENT_DEFAULT_SELECT, columnlist);
+  const queryParams = [classId];
+  const conditions = ['class_id = $1', 'deleted_at IS NULL'];
+
+  if (search) {
+    const parameter = `$${queryParams.length + 1}`;
+    queryParams.push(`%${search}%`);
+    conditions.push(`(${STUDENT_SEARCH_COLUMNS.map((column) => `${column} ILIKE ${parameter}`).join(' OR ')})`);
+  }
+
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
+  const countResult = await pool.query(`SELECT COUNT(*) FROM tra_student ${whereClause}`, queryParams);
+  const totalItems = parseInt(countResult.rows[0].count, 10);
+  const totalPages = Math.ceil(totalItems / size);
+  const orderBy = resolveOrderBy(STUDENT_COLUMN_ALIAS, order) || 'ORDER BY id ASC';
+
+  const sizeParameter = `$${queryParams.length + 1}`;
+  queryParams.push(size);
+  const offsetParameter = `$${queryParams.length + 1}`;
+  queryParams.push((page - 1) * size);
+  const result = await pool.query(
+    `SELECT ${columns} FROM tra_student ${whereClause}
+     ${orderBy} LIMIT ${sizeParameter} OFFSET ${offsetParameter}`,
+    queryParams
+  );
+
+  return {
+    page_info: { total_items: totalItems, total_pages: totalPages, current: page, size },
+    records: result.rows,
+  };
+};
+
+const assignStudents = async (classId, studentIds) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const classResult = await client.query('SELECT id FROM tra_class WHERE id = $1 FOR UPDATE', [classId]);
+    if (classResult.rows.length === 0) throw new AppError(errors.students.classNotFound);
+
+    const studentsResult = await client.query(
+      'SELECT id, class_id, deleted_at FROM tra_student WHERE id = ANY($1::int[]) FOR UPDATE',
+      [studentIds]
+    );
+    const byId = new Map(studentsResult.rows.map((student) => [student.id, student]));
+    const missingIds = studentIds.filter((id) => !byId.has(id));
+    if (missingIds.length) throw new AppError({ ...errors.students.studentNotFound, message: `${errors.students.studentNotFound.message}: ${missingIds.join(', ')}` });
+
+    const deletedIds = studentIds.filter((id) => byId.get(id).deleted_at !== null);
+    if (deletedIds.length) throw new AppError({ ...errors.students.studentDeleted, message: `${errors.students.studentDeleted.message}: ${deletedIds.join(', ')}` });
+
+    const assignedIds = studentIds.filter((id) => byId.get(id).class_id !== null);
+    if (assignedIds.length) throw new AppError({ ...errors.students.studentAlreadyAssigned, message: `${errors.students.studentAlreadyAssigned.message}: ${assignedIds.join(', ')}` });
+
+    await client.query(
+      'UPDATE tra_student SET class_id = $1, updated_at = NOW() WHERE id = ANY($2::int[]) AND class_id IS NULL AND deleted_at IS NULL',
+      [classId, studentIds]
+    );
+    await client.query('COMMIT');
+    return studentIds;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+const removeStudent = async (classId, studentId) => {
+  const classExists = await existsById(classId);
+  if (!classExists) throw new AppError(errors.students.classNotFound);
+
+  const studentResult = await pool.query(
+    'SELECT id, class_id FROM tra_student WHERE id = $1 AND deleted_at IS NULL',
+    [studentId]
+  );
+  if (studentResult.rows.length === 0) throw new AppError(errors.students.studentNotFound);
+  if (studentResult.rows[0].class_id !== classId) throw new AppError(errors.students.studentNotInClass);
+
+  const result = await pool.query(
+    'UPDATE tra_student SET class_id = NULL, updated_at = NOW() WHERE id = $1 AND class_id = $2 AND deleted_at IS NULL RETURNING id',
+    [studentId, classId]
+  );
+  if (result.rows.length === 0) throw new AppError(errors.students.studentNotInClass);
+  return { studentId: result.rows[0].id };
+};
+
+const getManyForExport = async (ids) => {
+  const placeholders = ids.map((_, index) => `$${index + 1}`).join(', ');
+  const result = await pool.query(
+    `SELECT code, name, description FROM tra_class WHERE id IN (${placeholders}) ORDER BY id ASC`,
+    ids
+  );
+  return result.rows;
+};
+
+const getOneForExport = async (id) => {
+  const result = await pool.query(
+    'SELECT code, name, description FROM tra_class WHERE id = $1',
+    [id]
+  );
+  return result.rows[0] || null;
 };
 
 // ============================================================
@@ -246,7 +381,13 @@ module.exports = {
   update,
   destroy,
   existsById,
+  getOneById,
+  getStudentsByClass,
+  assignStudents,
+  removeStudent,
   massDelete,
   copyOne,
   massCopy,
+  getManyForExport,
+  getOneForExport,
 };

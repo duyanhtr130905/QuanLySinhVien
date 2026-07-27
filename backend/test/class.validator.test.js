@@ -69,9 +69,9 @@ test('class store validation keeps required and maximum-length behavior without 
   expectError(() => validator.validateStore({ code: 'C01', name: 'x'.repeat(256) }), errors.store.nameTooLong);
 });
 
-test('class update validation permits partial body but preserves its current field constraints', () => {
+test('class update validation permits partial mutable fields and ignores code', () => {
   assert.deepEqual(validator.validateUpdate({ description: 'new' }), { code: undefined, name: undefined, description: 'new' });
-  expectError(() => validator.validateUpdate({ code: 'x'.repeat(51) }), errors.update.codeTooLong);
+  assert.deepEqual(validator.validateUpdate({ code: 'x'.repeat(51) }), { code: undefined, name: undefined, description: undefined });
   expectError(() => validator.validateUpdate({ name: 'x'.repeat(256) }), errors.update.nameTooLong);
   expectError(() => validator.validateUpdate({ name: '   ' }), errors.update.nameBlank);
 });
