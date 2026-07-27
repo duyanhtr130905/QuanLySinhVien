@@ -1,0 +1,340 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadController, makeReq, makeRes, expectApiResponse, makeNext } = require('./controllerTestHelpers');
+
+const controllerFor = (serviceMock, fileFormatMock) => loadController({
+  controller: '../src/modules/student/student.controller.js',
+  service: '../src/modules/student/student.service.js',
+  serviceMock,
+  dependencies: fileFormatMock ? { '../src/utils/fileFormat.js': fileFormatMock } : {},
+});
+
+const validStudent = {
+  code: 'SV01', fullname: 'Nguyen Van A', email: 'a@example.com', username: 'nguyenvana',
+  password: 'Passw0rd!', hobbies: 0,
+};
+
+test('student.getAll forwards columnlist and wraps the service payload', async () => {
+  const calls = [];
+  const controller = controllerFor({ getAll: async (...args) => { calls.push(args); return [{ id: 1 }]; } });
+  const res = makeRes();
+  await controller.getAll(makeReq({ query: { columnlist: 'id,fullname' } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'Lấy danh sách sinh viên thành công', [{ id: 1 }]);
+  assert.deepEqual(calls, [['id,fullname']]);
+});
+
+test('student.getById parses id and returns the current detail response', async () => {
+  const calls = [];
+  const controller = controllerFor({ getOneById: async (...args) => { calls.push(args); return { id: 7, fullname: 'A' }; } });
+  const res = makeRes();
+  await controller.getById(makeReq({ params: { id: '7' } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'Lấy chi tiết sinh viên thành công', { id: 7, fullname: 'A' });
+  assert.deepEqual(calls, [[7]]);
+});
+
+test('student.getByPage rejects bad paging parameters before service access', async () => {
+  let called = false;
+  const controller = controllerFor({ getByPage: async () => { called = true; } });
+  const pageRes = makeRes();
+  await controller.getByPage(makeReq({ query: { page: '', size: '5' } }), pageRes, makeNext());
+  expectApiResponse(pageRes, 400, 'C601', 'Số trang không hợp lệ', null);
+  const sizeRes = makeRes();
+  await controller.getByPage(makeReq({ query: { page: '1', size: 'no' } }), sizeRes, makeNext());
+  expectApiResponse(sizeRes, 400, 'C602', 'Cỡ trang không hợp lệ', null);
+  assert.equal(called, false);
+});
+
+test('student.getByPage parses toplist and forwards the current service object', async () => {
+  const calls = [];
+  const data = { page_info: { current: 1 }, records: [] };
+  const controller = controllerFor({ getByPage: async (...args) => { calls.push(args); return data; } });
+  const res = makeRes();
+  await controller.getByPage(makeReq({ query: { page: '1', size: '10', toplist: '2, x, 5', search: 'An' } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'Lấy danh sách sinh viên theo trang thành công', data);
+  assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: 'An', columnlist: undefined, toplist: [2, 5] }]]);
+});
+
+test('student.store validates before upload/store while still fetching the active hobby mask', async () => {
+  let stored = false;
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    store: async () => { stored = true; },
+    uploadAttachment: async () => { throw new Error('must not upload'); },
+  });
+  const res = makeRes();
+  await controller.store(makeReq({ body: { ...validStudent, email: 'invalid-email' } }), res, makeNext());
+  expectApiResponse(res, 400, 'E603', 'email không đúng định dạng', null);
+  assert.equal(stored, false);
+});
+
+test('student.store normalizes multipart sex=false, class_id null, and hobbies=0 before saving', async () => {
+  const calls = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    store: async (...args) => { calls.push(args); return { id: 10 }; },
+  });
+  const res = makeRes();
+  await controller.store(makeReq({
+    body: { ...validStudent, sex: 'false', class_id: '-1', hobbies: '' },
+  }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'Tạo sinh viên thành công', { id: 10 });
+  assert.deepEqual(calls, [[{
+    ...validStudent,
+    sex: false,
+    class_id: null,
+    hobbies: 0,
+    attachment: null,
+  }]]);
+});
+
+test('student.update validates a partial body before it updates', async () => {
+  let updated = false;
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    update: async () => { updated = true; },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({ params: { id: '4' }, body: { fullname: '   ' } }), res, makeNext());
+  expectApiResponse(res, 400, 'F603', 'fullname không được để trống', null);
+  assert.equal(updated, false);
+});
+
+test('student.update keeps password optional and forwards normalized multipart values', async () => {
+  const calls = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    update: async (...args) => { calls.push(args); return { id: 4 }; },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name', sex: 'false', class_id: '', hobbies: '0' },
+  }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'Cập nhật sinh viên thành công', { id: 4 });
+  assert.deepEqual(calls, [[4, { fullname: 'New name', sex: false, class_id: null, hobbies: 0 }]]);
+});
+
+test('student.store cleans up a newly uploaded attachment when the database write fails', async () => {
+  const deleted = [];
+  const databaseError = new Error('insert failed');
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    uploadAttachment: async () => 'https://storage/new.png',
+    store: async () => { throw databaseError; },
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const next = makeNext();
+  await controller.store(makeReq({
+    body: validStudent,
+    file: { mimetype: 'image/png', size: 3, originalname: 'new.png', buffer: Buffer.from('x') },
+  }), makeRes(), next);
+  assert.deepEqual(deleted, ['https://storage/new.png']);
+  assert.deepEqual(next.calls, [databaseError]);
+  assert.equal(databaseError.fallbackCode, 'E600');
+});
+
+test('student.update cleans up a newly uploaded attachment when the database write fails', async () => {
+  const deleted = [];
+  const databaseError = new Error('update failed');
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    getAttachmentById: async () => 'https://storage/old.png',
+    uploadAttachment: async () => 'https://storage/new.png',
+    update: async () => { throw databaseError; },
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const next = makeNext();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name' },
+    file: { mimetype: 'image/jpeg', size: 3, originalname: 'new.jpg', buffer: Buffer.from('x') },
+  }), makeRes(), next);
+  assert.deepEqual(deleted, ['https://storage/new.png']);
+  assert.deepEqual(next.calls, [databaseError]);
+  assert.equal(databaseError.fallbackCode, 'F600');
+});
+
+test('student.update cleans up a newly uploaded attachment when the student is not found', async () => {
+  const deleted = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    getAttachmentById: async () => 'https://storage/old.png',
+    uploadAttachment: async () => 'https://storage/new.png',
+    update: async () => null,
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name' },
+    file: { mimetype: 'image/jpeg', size: 3, originalname: 'new.jpg', buffer: Buffer.from('x') },
+  }), res, makeNext());
+
+  expectApiResponse(res, 404, 'F604', 'Kh\u00f4ng t\u00ecm th\u1ea5y sinh vi\u00ean', null);
+  assert.deepEqual(deleted, ['https://storage/new.png']);
+});
+
+test('student.update deletes the old attachment after a successful database update', async () => {
+  const deleted = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    getAttachmentById: async () => 'https://storage/old.png',
+    uploadAttachment: async () => 'https://storage/new.png',
+    update: async () => ({ id: 4, attachment: 'https://storage/new.png' }),
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name' },
+    file: { mimetype: 'image/jpeg', size: 3, originalname: 'new.jpg', buffer: Buffer.from('x') },
+  }), res, makeNext());
+
+  expectApiResponse(res, 200, '200', 'C\u1eadp nh\u1eadt sinh vi\u00ean th\u00e0nh c\u00f4ng', { id: 4, attachment: 'https://storage/new.png' });
+  assert.deepEqual(deleted, ['https://storage/old.png']);
+});
+
+test('student.update preserves the new attachment when old attachment cleanup fails', async () => {
+  const deleted = [];
+  const updateCalls = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    getAttachmentById: async () => 'https://storage/old.png',
+    uploadAttachment: async () => 'https://storage/new.png',
+    update: async (...args) => {
+      updateCalls.push(args);
+      return { id: 4, attachment: 'https://storage/new.png' };
+    },
+    deleteAttachment: async (url) => {
+      deleted.push(url);
+      throw new Error('old attachment cleanup failed');
+    },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name' },
+    file: { mimetype: 'image/jpeg', size: 3, originalname: 'new.jpg', buffer: Buffer.from('x') },
+  }), res, makeNext());
+
+  expectApiResponse(res, 200, '200', 'C\u1eadp nh\u1eadt sinh vi\u00ean th\u00e0nh c\u00f4ng', { id: 4, attachment: 'https://storage/new.png' });
+  assert.deepEqual(updateCalls, [[4, { fullname: 'New name', attachment: 'https://storage/new.png' }]]);
+  assert.deepEqual(deleted, ['https://storage/old.png']);
+});
+
+test('student.update does not call storage cleanup when no replacement attachment is provided', async () => {
+  const deleted = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    update: async () => ({ id: 4 }),
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({ params: { id: '4' }, body: { fullname: 'New name' } }), res, makeNext());
+
+  expectApiResponse(res, 200, '200', 'C\u1eadp nh\u1eadt sinh vi\u00ean th\u00e0nh c\u00f4ng', { id: 4 });
+  assert.deepEqual(deleted, []);
+});
+
+test('student.destroy returns deleted data and massDestroy preserves partial success', async () => {
+  const destroyCalls = [];
+  const one = controllerFor({ destroy: async (...args) => { destroyCalls.push(args); return { id: 4 }; } });
+  const oneRes = makeRes();
+  await one.destroy(makeReq({ params: { id: '4' } }), oneRes, makeNext());
+  expectApiResponse(oneRes, 200, '200', 'Xóa sinh viên thành công', { id: 4 });
+  assert.deepEqual(destroyCalls, [[4]]);
+
+  const massCalls = [];
+  const many = controllerFor({ massDestroy: async (...args) => { massCalls.push(args); return { deleted: [4], notFound: [8] }; } });
+  const manyRes = makeRes();
+  await many.massDestroy(makeReq({ body: { idlist: [4, 8] } }), manyRes, makeNext());
+  expectApiResponse(manyRes, 200, '200', 'Đã xóa 1 sinh viên. Không tìm thấy ids: 8', { deleted: [4], notFound: [8] });
+  assert.deepEqual(massCalls, [[[4, 8]]]);
+});
+
+test('student.copyOne and massCopy expose their current copy contracts', async () => {
+  const oneCalls = [];
+  const one = controllerFor({ copyOne: async (...args) => { oneCalls.push(args); return { id: 12 }; } });
+  const oneRes = makeRes();
+  await one.copyOne(makeReq({ params: { id: '4' } }), oneRes, makeNext());
+  expectApiResponse(oneRes, 200, '200', 'Sao chép sinh viên thành công', { id: 12 });
+  assert.deepEqual(oneCalls, [[4]]);
+
+  const massCalls = [];
+  const many = controllerFor({ massCopy: async (...args) => { massCalls.push(args); return { created: [{ id: 12 }], notFound: [8] }; } });
+  const manyRes = makeRes();
+  await many.massCopy(makeReq({ body: { idlist: [4, 8] } }), manyRes, makeNext());
+  expectApiResponse(manyRes, 200, '200', 'Đã sao chép 1 sinh viên. Không tìm thấy ids: 8', [{ id: 12 }]);
+  assert.deepEqual(massCalls, [[[4, 8]]]);
+});
+
+test('student.importStudents reports a missing multipart file without parsing a file', async () => {
+  let parsed = false;
+  const controller = controllerFor({}, {
+    parseFile: async () => { parsed = true; return []; },
+    buildFile: () => { throw new Error('not used'); },
+  });
+  const res = makeRes();
+  await controller.importStudents(makeReq(), res, makeNext());
+  expectApiResponse(res, 400, 'J604', 'Không tìm thấy file upload', null);
+  assert.equal(parsed, false);
+});
+
+test('student.importStudents retains partial-success response semantics', async () => {
+  const storeCalls = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    store: async (...args) => { storeCalls.push(args); return { id: 11 }; },
+  }, {
+    parseFile: async () => [
+      { ...validStudent, sex: 'false', hobbies: '0' },
+      { ...validStudent, code: '' },
+    ],
+    buildFile: () => { throw new Error('not used'); },
+  });
+  const res = makeRes();
+  await controller.importStudents(makeReq({
+    file: { originalname: 'students.csv', buffer: Buffer.from('not-read') },
+  }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'Import thành công 1 dòng, lỗi 1 dòng', {
+    created: [{ id: 11 }],
+    failed: [{ row: 3, reason: 'code là bắt buộc' }],
+  });
+  assert.deepEqual(storeCalls, [[{ ...validStudent, sex: false, hobbies: 0 }]]);
+});
+
+test('student.exportOne uses the requested format contract without a real file', async () => {
+  const serviceCalls = [];
+  const buildCalls = [];
+  const output = Buffer.from('[]');
+  const controller = controllerFor({
+    getOneById: async (...args) => { serviceCalls.push(args); return { id: 4, fullname: 'A' }; },
+  }, {
+    parseFile: async () => [],
+    buildFile: (...args) => { buildCalls.push(args); return { buffer: output, contentType: 'application/json', extension: 'json' }; },
+  });
+  const res = makeRes();
+  await controller.exportOne(makeReq({ params: { id: '4' }, query: { type: 'json' } }), res, makeNext());
+  assert.deepEqual(serviceCalls, [[4]]);
+  assert.deepEqual(buildCalls, [[[{ id: 4, fullname: 'A' }], 'json']]);
+  assert.equal(res.headers['Content-Type'], 'application/json');
+  assert.equal(res.headers['Content-Disposition'], 'attachment; filename="student-4.json"');
+  assert.equal(res.sent, output);
+});
+
+test('student.massExport forwards idlist and writes the export response headers', async () => {
+  const serviceCalls = [];
+  const output = Buffer.from('id,fullname');
+  const controller = controllerFor({
+    getManyByIds: async (...args) => { serviceCalls.push(args); return [{ id: 4 }]; },
+  }, {
+    parseFile: async () => [],
+    buildFile: () => ({ buffer: output, contentType: 'text/csv', extension: 'csv' }),
+  });
+  const res = makeRes();
+  await controller.massExport(makeReq({ body: { idlist: [4, 8], type: 'csv' } }), res, makeNext());
+  assert.deepEqual(serviceCalls, [[[4, 8]]]);
+  assert.equal(res.headers['Content-Type'], 'text/csv');
+  assert.equal(res.headers['Content-Disposition'], 'attachment; filename="students-export.csv"');
+  assert.equal(res.sent, output);
+});

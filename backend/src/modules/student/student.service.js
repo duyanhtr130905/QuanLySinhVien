@@ -1,12 +1,12 @@
 const pool = require('../../config/db');
 const bcrypt = require('bcrypt');
-const { resolveColumns, resolveOrderBy, buildToplistClause } = require('../../utils/queryHelpers');
+const createListRepository = require('../../core/database/createListRepository');
 const { generateUniqueValue, runMassCopyTransaction } = require('../../utils/copyHelpers');
 
 const SALT_ROUNDS = 10;
 
 // ============================================================
-// DANH SÁCH CỘT HỢP LỆ (không có password, hobbies, attachment)
+// DANH SÁCH CỘT HỢP LỆ (không có password)
 // ============================================================
 const VALID_COLUMNS = [
   'id', 'code', 'fullname', 'dob', 'sex', 'homecity', 'address',
@@ -40,6 +40,17 @@ const COLUMN_ALIAS = {
   ua: 'updated_at',
 };
 
+const listRepository = createListRepository({
+  pool,
+  tableName: 'tra_student',
+  validColumns: VALID_COLUMNS,
+  defaultColumns: VALID_COLUMNS,
+  columnAliases: COLUMN_ALIAS,
+  searchColumns: ['fullname', 'description', 'email'],
+  deletedFilter: 'deleted_at IS NULL',
+  defaultOrder: 'ORDER BY id ASC',
+});
+
 // ============================================================
 // 1. GET ALL
 // ============================================================
@@ -47,18 +58,6 @@ const COLUMN_ALIAS = {
  * Lấy toàn bộ sinh viên chưa bị soft-delete.
  * Bắt buộc thêm deleted_at IS NULL — sinh viên đã xóa không được xuất hiện.
  */
-const getAll = async (columnlist) => {
-  const cols = resolveColumns(VALID_COLUMNS, DEFAULT_SELECT, columnlist);
-  const sql = `
-    SELECT ${cols}
-    FROM tra_student
-    WHERE deleted_at IS NULL
-    ORDER BY id ASC
-  `;
-  const result = await pool.query(sql);
-  return result.rows;
-};
-
 // ============================================================
 // 2. GET BY PAGE
 // ============================================================
@@ -67,58 +66,11 @@ const getAll = async (columnlist) => {
  * Search theo fullname, description, email (ILIKE).
  * Luôn lọc deleted_at IS NULL.
  */
-const getByPage = async ({ page, size, order, search, columnlist, toplist }) => {
-  const cols = resolveColumns(VALID_COLUMNS, DEFAULT_SELECT, columnlist);
-  const offset = (page - 1) * size;
-  const queryParams = [];
-  let paramIndex = 1;
-
   // WHERE base: chỉ lấy sinh viên chưa xóa
-  let whereClause = 'WHERE deleted_at IS NULL';
-
   // Thêm điều kiện search nếu có (ILIKE — không phân biệt hoa thường)
-  if (search) {
-    queryParams.push(`%${search}%`);
-    whereClause += ` AND (fullname ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`;
-    paramIndex++;
-  }
-
   // Đếm tổng số bản ghi thỏa điều kiện (dùng cùng queryParams)
-  const countSql = `SELECT COUNT(*) FROM tra_student ${whereClause}`;
-  const countResult = await pool.query(countSql, queryParams);
-  const totalItems = parseInt(countResult.rows[0].count, 10);
-  const totalPages = Math.ceil(totalItems / size);
-
   // Xây ORDER BY
-  const orderBy = resolveOrderBy(COLUMN_ALIAS, order) || 'ORDER BY id ASC';
-
   // Toplist: ghim các id lên đầu bằng CASE WHEN trong ORDER BY
-  const toplistClause = buildToplistClause(toplist);
-
-  queryParams.push(size);
-  queryParams.push(offset);
-
-  const dataSql = `
-    SELECT ${cols}
-    FROM tra_student
-    ${whereClause}
-    ORDER BY ${toplistClause} ${orderBy.replace('ORDER BY ', '')}
-    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
-
-  const dataResult = await pool.query(dataSql, queryParams);
-
-  return {
-    page_info: {
-      total_items: totalItems,
-      total_pages: totalPages,
-      current: page,
-      size,
-    },
-    records: dataResult.rows,
-  };
-};
-
 // ============================================================
 // 3. STORE (Tạo mới)
 // ============================================================
@@ -127,6 +79,8 @@ const getByPage = async ({ page, size, order, search, columnlist, toplist }) => 
  * Password được hash bằng bcrypt trước khi insert.
  * RETURNING liệt kê rõ cột — KHÔNG có password trong response.
  */
+const { getAll, getByPage } = listRepository;
+
 const store = async (data) => {
   const {
     code, fullname, dob, sex, homecity, address,
