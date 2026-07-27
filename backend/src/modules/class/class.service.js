@@ -1,13 +1,11 @@
 const pool = require('../../config/db');
-const { resolveColumns, resolveOrderBy, buildToplistClause } = require('../../utils/queryHelpers');
+const createListRepository = require('../../core/database/createListRepository');
 const { generateUniqueValue, runMassCopyTransaction } = require('../../utils/copyHelpers');
 
 // ============================================================
 // DANH SÁCH CỘT HỢP LỆ — dùng để validate columnlist
 // ============================================================
 const VALID_COLUMNS = ['id', 'code', 'name', 'description', 'created_at', 'updated_at'];
-const DEFAULT_SELECT = VALID_COLUMNS.join(', ');
-
 // Mapping alias ngắn (dùng trong param "order") -> tên cột thật
 const COLUMN_ALIAS = {
   id: 'id',
@@ -18,19 +16,22 @@ const COLUMN_ALIAS = {
   ua: 'updated_at',
 };
 
+const listRepository = createListRepository({
+  pool,
+  tableName: 'tra_class',
+  validColumns: VALID_COLUMNS,
+  defaultColumns: VALID_COLUMNS,
+  columnAliases: COLUMN_ALIAS,
+  searchColumns: ['code', 'name', 'description'],
+  defaultOrder: 'ORDER BY id ASC',
+});
+
 // ============================================================
 // 1. GET ALL
 // ============================================================
 /**
  * Lấy toàn bộ danh sách lớp, hỗ trợ lọc cột qua columnlist.
  */
-const getAll = async (columnlist) => {
-  const cols = resolveColumns(VALID_COLUMNS, DEFAULT_SELECT, columnlist);
-  const sql = `SELECT ${cols} FROM tra_class ORDER BY id ASC`;
-  const result = await pool.query(sql);
-  return result.rows;
-};
-
 // ============================================================
 // 2. GET BY PAGE
 // ============================================================
@@ -44,56 +45,10 @@ const getAll = async (columnlist) => {
  * @param {string} [params.columnlist] - Danh sách cột muốn lấy
  * @param {number[]} [params.toplist] - Danh sách id ghim đầu trang
  */
-const getByPage = async ({ page, size, order, search, columnlist, toplist }) => {
-  const cols = resolveColumns(VALID_COLUMNS, DEFAULT_SELECT, columnlist);
-  const offset = (page - 1) * size;
-  const queryParams = [];
-  let paramIndex = 1;
-
   // Điều kiện tìm kiếm (ILIKE để không phân biệt hoa thường)
-  let whereClause = '';
-  if (search) {
-    queryParams.push(`%${search}%`);
-    whereClause = `WHERE (code ILIKE $${paramIndex} OR name ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
-    paramIndex++;
-  }
-
   // Đếm tổng số bản ghi thỏa điều kiện
-  const countSql = `SELECT COUNT(*) FROM tra_class ${whereClause}`;
-  const countResult = await pool.query(countSql, queryParams);
-  const totalItems = parseInt(countResult.rows[0].count, 10);
-  const totalPages = Math.ceil(totalItems / size);
-
   // Xây ORDER BY
-  const orderBy = resolveOrderBy(COLUMN_ALIAS, order) || 'ORDER BY id ASC';
-
   // Xử lý toplist: ghim các bản ghi có id thuộc toplist lên đầu
-  const toplistClause = buildToplistClause(toplist);
-
-  queryParams.push(size);
-  queryParams.push(offset);
-
-  const dataSql = `
-    SELECT ${cols}
-    FROM tra_class
-    ${whereClause}
-    ORDER BY ${toplistClause} ${orderBy.replace('ORDER BY ', '')}
-    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
-
-  const dataResult = await pool.query(dataSql, queryParams);
-
-  return {
-    page_info: {
-      total_items: totalItems,
-      total_pages: totalPages,
-      current: page,
-      size,
-    },
-    records: dataResult.rows,
-  };
-};
-
 // ============================================================
 // 3. STORE (Tạo mới)
 // ============================================================
@@ -102,6 +57,8 @@ const getByPage = async ({ page, size, order, search, columnlist, toplist }) => 
  * @param {object} data - { code, name, description }
  * @returns {{ id: number }}
  */
+const { getAll, getByPage } = listRepository;
+
 const store = async ({ code, name, description }) => {
   const sql = `
     INSERT INTO tra_class (code, name, description, created_at, updated_at)

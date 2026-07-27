@@ -30,10 +30,4 @@ const resolveOrderBy = (columnAlias, orderStr) => {
 };
 
 /** Xây mệnh đề CASE WHEN để ghim các id trong toplist lên đầu ORDER BY. */
-const buildToplistClause = (toplist) => {
-  if (!toplist || toplist.length === 0) return '';
-  const ids = toplist.map((id) => parseInt(id, 10)).filter(Boolean).join(', ');
-  return ids ? `CASE WHEN id IN (${ids}) THEN 0 ELSE 1 END,` : '';
-};
-
-module.exports = { resolveColumns, resolveOrderBy, buildToplistClause };
+module.exports = { resolveColumns, resolveOrderBy };
