@@ -154,6 +154,88 @@ test('student.update cleans up a newly uploaded attachment when the database wri
   assert.equal(databaseError.fallbackCode, 'F600');
 });
 
+test('student.update cleans up a newly uploaded attachment when the student is not found', async () => {
+  const deleted = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    getAttachmentById: async () => 'https://storage/old.png',
+    uploadAttachment: async () => 'https://storage/new.png',
+    update: async () => null,
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name' },
+    file: { mimetype: 'image/jpeg', size: 3, originalname: 'new.jpg', buffer: Buffer.from('x') },
+  }), res, makeNext());
+
+  expectApiResponse(res, 404, 'F604', 'Kh\u00f4ng t\u00ecm th\u1ea5y sinh vi\u00ean', null);
+  assert.deepEqual(deleted, ['https://storage/new.png']);
+});
+
+test('student.update deletes the old attachment after a successful database update', async () => {
+  const deleted = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    getAttachmentById: async () => 'https://storage/old.png',
+    uploadAttachment: async () => 'https://storage/new.png',
+    update: async () => ({ id: 4, attachment: 'https://storage/new.png' }),
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name' },
+    file: { mimetype: 'image/jpeg', size: 3, originalname: 'new.jpg', buffer: Buffer.from('x') },
+  }), res, makeNext());
+
+  expectApiResponse(res, 200, '200', 'C\u1eadp nh\u1eadt sinh vi\u00ean th\u00e0nh c\u00f4ng', { id: 4, attachment: 'https://storage/new.png' });
+  assert.deepEqual(deleted, ['https://storage/old.png']);
+});
+
+test('student.update preserves the new attachment when old attachment cleanup fails', async () => {
+  const deleted = [];
+  const updateCalls = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    getAttachmentById: async () => 'https://storage/old.png',
+    uploadAttachment: async () => 'https://storage/new.png',
+    update: async (...args) => {
+      updateCalls.push(args);
+      return { id: 4, attachment: 'https://storage/new.png' };
+    },
+    deleteAttachment: async (url) => {
+      deleted.push(url);
+      throw new Error('old attachment cleanup failed');
+    },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({
+    params: { id: '4' },
+    body: { fullname: 'New name' },
+    file: { mimetype: 'image/jpeg', size: 3, originalname: 'new.jpg', buffer: Buffer.from('x') },
+  }), res, makeNext());
+
+  expectApiResponse(res, 200, '200', 'C\u1eadp nh\u1eadt sinh vi\u00ean th\u00e0nh c\u00f4ng', { id: 4, attachment: 'https://storage/new.png' });
+  assert.deepEqual(updateCalls, [[4, { fullname: 'New name', attachment: 'https://storage/new.png' }]]);
+  assert.deepEqual(deleted, ['https://storage/old.png']);
+});
+
+test('student.update does not call storage cleanup when no replacement attachment is provided', async () => {
+  const deleted = [];
+  const controller = controllerFor({
+    getActiveHobbyMask: async () => 0,
+    update: async () => ({ id: 4 }),
+    deleteAttachment: async (url) => { deleted.push(url); },
+  });
+  const res = makeRes();
+  await controller.update(makeReq({ params: { id: '4' }, body: { fullname: 'New name' } }), res, makeNext());
+
+  expectApiResponse(res, 200, '200', 'C\u1eadp nh\u1eadt sinh vi\u00ean th\u00e0nh c\u00f4ng', { id: 4 });
+  assert.deepEqual(deleted, []);
+});
+
 test('student.destroy returns deleted data and massDestroy preserves partial success', async () => {
   const destroyCalls = [];
   const one = controllerFor({ destroy: async (...args) => { destroyCalls.push(args); return { id: 4 }; } });

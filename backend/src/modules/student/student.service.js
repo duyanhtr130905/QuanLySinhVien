@@ -6,7 +6,7 @@ const { generateUniqueValue, runMassCopyTransaction } = require('../../utils/cop
 const SALT_ROUNDS = 10;
 
 // ============================================================
-// DANH SÁCH CỘT HỢP LỆ (không có password, hobbies, attachment)
+// DANH SÁCH CỘT HỢP LỆ (không có password)
 // ============================================================
 const VALID_COLUMNS = [
   'id', 'code', 'fullname', 'dob', 'sex', 'homecity', 'address',

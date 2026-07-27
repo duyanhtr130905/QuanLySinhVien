@@ -78,6 +78,7 @@ const store = asyncHandler(async (req, res) => {
 // PUT /student/:id
 const update = asyncHandler(async (req, res) => {
   let attachment = { newAttachmentUrl: undefined, oldAttachmentUrl: null };
+  let databaseUpdated = false;
   try {
     const id = validator.parseUpdateId(req.params.id);
     const body = normalizeMultipartBody(req.body);
@@ -96,10 +97,11 @@ const update = asyncHandler(async (req, res) => {
       return sendError(res, errors.update.notFound);
     }
 
+    databaseUpdated = true;
     await fileService.cleanupOldAttachmentAfterUpdate(attachment, storage);
     return successResponse(res, data, 'Cập nhật sinh viên thành công');
   } catch (error) {
-    await fileService.cleanupNewAttachment(attachment.newAttachmentUrl, storage);
+    if (!databaseUpdated) await fileService.cleanupNewAttachment(attachment.newAttachmentUrl, storage);
     if (sendExpectedError(res, error)) return undefined;
     if (error.code === '23505') return sendError(res, errors.update.duplicate, errors.uniqueMessageForConstraint(error.constraint));
     if (error.code === '23503') return sendError(res, errors.update.classNotFound);

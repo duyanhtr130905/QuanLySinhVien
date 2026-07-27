@@ -30,9 +30,14 @@ const cleanupNewAttachment = async (url, storage, { suppressErrors = true } = {}
   else await storage.deleteAttachment(url);
 };
 
-const cleanupOldAttachmentAfterUpdate = async ({ newAttachmentUrl, oldAttachmentUrl }, storage) => {
+const cleanupOldAttachmentAfterUpdate = async (
+  { newAttachmentUrl, oldAttachmentUrl },
+  storage,
+  { suppressErrors = true } = {}
+) => {
   if (newAttachmentUrl && oldAttachmentUrl && oldAttachmentUrl !== newAttachmentUrl) {
-    await storage.deleteAttachment(oldAttachmentUrl);
+    if (suppressErrors) await storage.deleteAttachment(oldAttachmentUrl).catch(() => {});
+    else await storage.deleteAttachment(oldAttachmentUrl);
   }
 };
 
