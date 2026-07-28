@@ -2,10 +2,11 @@ import React, { useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useHistory, useLocation } from 'react-router-dom'
 import {
-  Alert, Breadcrumb, Button, Card, Dropdown, Empty, Menu, message, Select, Table,
+  Alert, Breadcrumb, Button, Card, Empty, message, Select, Table,
 } from 'antd'
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons'
 import { exportManyClasses } from 'redux/actions/Class'
+import '../../student/student-export/StudentExport.css'
 
 const EXPORT_TYPES = ['csv', 'xlsx', 'json', 'xml']
 
@@ -43,19 +44,10 @@ const ClassExport = () => {
     ))
   }
 
-  const exportMenu = (
-    <Menu>
-      {EXPORT_TYPES.map(format => <Menu.Item key={format} disabled={exporting} onClick={() => handleExport(format)}>{format.toUpperCase()}</Menu.Item>)}
-    </Menu>
-  )
-
   return (
     <div className="student-export-page">
       <div className="student-export-actions no-print">
         <Button icon={<ArrowLeftOutlined />} onClick={() => history.push(listRoute)}>Trở về Danh sách Lớp</Button>
-        <Dropdown overlay={exportMenu} trigger={['click']} disabled={!selectedRowKeys.length || exporting}>
-          <Button type="primary" icon={<DownloadOutlined />} loading={exporting}>Xuất dữ liệu</Button>
-        </Dropdown>
       </div>
       <Breadcrumb className="student-export-breadcrumb no-print">
         <Breadcrumb.Item>Quản lý danh mục</Breadcrumb.Item>
