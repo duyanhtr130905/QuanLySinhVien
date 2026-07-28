@@ -59,7 +59,7 @@ const ClassExport = () => {
       </div>
       <Breadcrumb className="student-export-breadcrumb no-print">
         <Breadcrumb.Item>Quản lý danh mục</Breadcrumb.Item>
-        <Breadcrumb.Item>Danh mục Lớp</Breadcrumb.Item>
+        <Breadcrumb.Item>Lớp</Breadcrumb.Item>
         <Breadcrumb.Item>Xuất dữ liệu</Breadcrumb.Item>
       </Breadcrumb>
       <Card className="student-export-config no-print">

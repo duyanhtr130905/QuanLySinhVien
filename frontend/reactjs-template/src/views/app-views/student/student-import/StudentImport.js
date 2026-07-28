@@ -167,7 +167,7 @@ const StudentImport = () => {
     <div className="student-import-page">
       <Breadcrumb>
         <Breadcrumb.Item><Link to={listRoute}>Quản lý danh mục</Link></Breadcrumb.Item>
-        <Breadcrumb.Item><Link to={listRoute}>Danh mục Sinh viên</Link></Breadcrumb.Item>
+        <Breadcrumb.Item><Link to={listRoute}>Sinh viên</Link></Breadcrumb.Item>
         <Breadcrumb.Item>Import dữ liệu</Breadcrumb.Item>
       </Breadcrumb>
 

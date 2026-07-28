@@ -306,7 +306,7 @@ const ClassDetail = () => {
     <div className="class-detail-page">
       <Breadcrumb>
         <Breadcrumb.Item><Link to={listRoute}>Quản lý danh mục</Link></Breadcrumb.Item>
-        <Breadcrumb.Item><Link to={listRoute}>Danh mục Lớp</Link></Breadcrumb.Item>
+        <Breadcrumb.Item><Link to={listRoute}>Lớp</Link></Breadcrumb.Item>
         <Breadcrumb.Item>Chi tiết Lớp</Breadcrumb.Item>
       </Breadcrumb>
       <div className="class-list-toolbar">

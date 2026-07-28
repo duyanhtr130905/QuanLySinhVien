@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useHistory, useLocation } from 'react-router-dom'
 import {
-  Avatar, Button, Card, Dropdown, Input, Menu, message, Modal,
+  Avatar, Breadcrumb, Button, Card, Dropdown, Input, Menu, message, Modal,
   Pagination, Popover, Table, Tag, Tooltip
 } from 'antd'
 import {
@@ -574,14 +574,18 @@ const StudentList = () => {
 
   return (
       <div className="student-list-page">
+        <Breadcrumb className="mb-3">
+          <Breadcrumb.Item>Quản lý danh mục</Breadcrumb.Item>
+          <Breadcrumb.Item>Sinh viên</Breadcrumb.Item>
+        </Breadcrumb>
         <div className="mb-3 d-flex justify-content-between align-items-center">
-          <h2 className="mb-0">Danh sách Sinh viên</h2>
+          <h1 className="mb-0">Danh sách Sinh viên</h1>
           <div className="d-flex align-items-center" style={{ gap: 8 }}>
             <Dropdown overlay={bulkActionMenu} trigger={['click']}><Button>Hành động <MoreOutlined /></Button></Dropdown>
             <Popover title="Hiện cột" content={columnChooser} trigger="click" placement="bottomRight" visible={columnChooserVisible} onVisibleChange={setColumnChooserVisible} getPopupContainer={() => document.body} overlayClassName="student-column-chooser-overlay" destroyTooltipOnHide>
               <Button icon={<FilterOutlined />}>Hiện cột</Button>
             </Popover>
-            <Search placeholder="Tìm kiếm sinh viên..." defaultValue={query.search} onSearch={handleSearch} onChange={event => !event.target.value && handleSearch('')} style={{ width: 280 }} allowClear />
+            <Search placeholder="Tìm kiếm sinh viên..." defaultValue={query.search} onSearch={handleSearch} onChange={event => !event.target.value && handleSearch('')} style={{ width: 320 }} allowClear enterButton />
             <Button type="primary" shape="circle" icon={<PlusOutlined />} onClick={() => history.push('/app/student/create')} />
           </div>
         </div>

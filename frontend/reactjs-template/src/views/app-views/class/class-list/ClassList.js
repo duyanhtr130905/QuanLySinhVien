@@ -563,7 +563,7 @@ const ClassList = () => {
       <div className="class-list-page">
         <Breadcrumb>
           <Breadcrumb.Item>Quản lý danh mục</Breadcrumb.Item>
-          <Breadcrumb.Item>Danh mục Lớp</Breadcrumb.Item>
+          <Breadcrumb.Item>Lớp</Breadcrumb.Item>
         </Breadcrumb>
         <div className="class-list-toolbar">
           <h1>Danh sách Lớp</h1>

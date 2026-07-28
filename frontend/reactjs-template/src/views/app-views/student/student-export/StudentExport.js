@@ -193,7 +193,7 @@ const StudentExport = () => {
 
       <Breadcrumb className="student-export-breadcrumb no-print">
         <Breadcrumb.Item>Quản lý danh mục</Breadcrumb.Item>
-        <Breadcrumb.Item>Danh mục Sinh viên</Breadcrumb.Item>
+        <Breadcrumb.Item>Sinh viên</Breadcrumb.Item>
         <Breadcrumb.Item>Xuất dữ liệu</Breadcrumb.Item>
       </Breadcrumb>
 

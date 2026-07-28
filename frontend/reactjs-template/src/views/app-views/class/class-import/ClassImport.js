@@ -98,7 +98,7 @@ const ClassImport = () => {
     <div className="student-import-page">
       <Breadcrumb>
         <Breadcrumb.Item><Link to={listRoute}>Quản lý danh mục</Link></Breadcrumb.Item>
-        <Breadcrumb.Item><Link to={listRoute}>Danh mục Lớp</Link></Breadcrumb.Item>
+        <Breadcrumb.Item><Link to={listRoute}>Lớp</Link></Breadcrumb.Item>
         <Breadcrumb.Item>Import dữ liệu</Breadcrumb.Item>
       </Breadcrumb>
       <div className="student-import-header">

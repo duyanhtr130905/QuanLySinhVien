@@ -921,7 +921,7 @@ const studentNavTree = [{
       matchPrefix: `${APP_PREFIX_PATH}/student`,
       title: 'Sinh viên',
       icon: ProfileOutlined,
-      breadcrumb: true,
+      breadcrumb: false,
       submenu: []
     },
     {
@@ -930,7 +930,7 @@ const studentNavTree = [{
       matchPrefix: `${APP_PREFIX_PATH}/class`,
       title: 'Lớp',
       icon: ApartmentOutlined,
-      breadcrumb: true,
+      breadcrumb: false,
       submenu: []
     }
   ]

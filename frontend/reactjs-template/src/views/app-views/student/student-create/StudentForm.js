@@ -656,7 +656,7 @@ const StudentForm = ({ mode = 'create' }) => {
       <div className="student-create-page">
       <Breadcrumb>
         <Breadcrumb.Item><Link to={listRoute}>Quản lý danh mục</Link></Breadcrumb.Item>
-        <Breadcrumb.Item><Link to={listRoute}>Danh mục Sinh viên</Link></Breadcrumb.Item>
+        <Breadcrumb.Item><Link to={listRoute}>Sinh viên</Link></Breadcrumb.Item>
         <Breadcrumb.Item>{isCopy ? 'Sao chép' : isEdit ? 'Chỉnh sửa' : 'Thêm mới'}</Breadcrumb.Item>
       </Breadcrumb>
       <h1 className="student-create-heading">

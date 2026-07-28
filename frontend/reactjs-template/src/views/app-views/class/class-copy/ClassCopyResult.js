@@ -59,7 +59,7 @@ const ClassCopyResult = () => {
     <div className="class-copy-result-page">
       <Breadcrumb>
         <Breadcrumb.Item><Link to={listRoute}>Quản lý danh mục</Link></Breadcrumb.Item>
-        <Breadcrumb.Item><Link to={listRoute}>Danh mục Lớp</Link></Breadcrumb.Item>
+        <Breadcrumb.Item><Link to={listRoute}>Lớp</Link></Breadcrumb.Item>
         <Breadcrumb.Item>Sao chép nhiều</Breadcrumb.Item>
       </Breadcrumb>
       <h1>Sao chép nhiều bản ghi Lớp</h1>
