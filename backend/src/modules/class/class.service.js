@@ -46,6 +46,18 @@ const STUDENT_COLUMN_ALIAS = {
 };
 const STUDENT_SEARCH_COLUMNS = ['code', 'fullname', 'email', 'username', 'description'];
 
+const availableStudentsRepository = createListRepository({
+  pool,
+  tableName: 'tra_student',
+  validColumns: STUDENT_COLUMNS,
+  defaultColumns: STUDENT_COLUMNS,
+  columnAliases: STUDENT_COLUMN_ALIAS,
+  searchColumns: STUDENT_SEARCH_COLUMNS,
+  baseWhereClause: 'class_id IS NULL',
+  deletedFilter: 'deleted_at IS NULL',
+  defaultOrder: 'ORDER BY id ASC',
+});
+
 // ============================================================
 // 1. GET ALL
 // ============================================================
@@ -201,33 +213,73 @@ const getStudentsByClass = async (classId, { page, size, order, search, columnli
   };
 };
 
+const getAvailableStudentsByClass = async (classId, query) => {
+  const classExists = await existsById(classId);
+  if (!classExists) return null;
+  return availableStudentsRepository.getByPage(query);
+};
+
+// pg may return integer columns as strings depending on the configured type parsers.
+// Keep IDs comparable without coercing invalid input to NaN.
+const normalizePositiveId = (value) => {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value === 'string' && /^[1-9]\d*$/.test(value)) {
+    const normalized = Number(value);
+    return Number.isSafeInteger(normalized) ? normalized : null;
+  }
+  return null;
+};
+
+const normalizeRequiredId = (value, errorConfig) => {
+  const normalized = normalizePositiveId(value);
+  if (normalized === null) throw new AppError(errorConfig);
+  return normalized;
+};
+
+const normalizeStudentIds = (studentIds) => {
+  if (!Array.isArray(studentIds)) throw new AppError(errors.students.invalidStudentIds);
+  const normalized = studentIds.map((id) => normalizePositiveId(id));
+  const uniqueIds = [...new Set(normalized)];
+  if (uniqueIds.length === 0 || normalized.some((id) => id === null)) {
+    throw new AppError(errors.students.invalidStudentIds);
+  }
+  return uniqueIds;
+};
+
 const assignStudents = async (classId, studentIds) => {
+  const normalizedClassId = normalizeRequiredId(classId, errors.students.invalidId);
+  const normalizedStudentIds = normalizeStudentIds(studentIds);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const classResult = await client.query('SELECT id FROM tra_class WHERE id = $1 FOR UPDATE', [classId]);
+    const classResult = await client.query('SELECT id FROM tra_class WHERE id = $1 FOR UPDATE', [normalizedClassId]);
     if (classResult.rows.length === 0) throw new AppError(errors.students.classNotFound);
 
     const studentsResult = await client.query(
       'SELECT id, class_id, deleted_at FROM tra_student WHERE id = ANY($1::int[]) FOR UPDATE',
-      [studentIds]
+      [normalizedStudentIds]
     );
-    const byId = new Map(studentsResult.rows.map((student) => [student.id, student]));
-    const missingIds = studentIds.filter((id) => !byId.has(id));
+    const byId = new Map(studentsResult.rows.map((student) => [
+      normalizeRequiredId(student.id, errors.students.invalidStudentIds),
+      student,
+    ]));
+    const missingIds = normalizedStudentIds.filter((id) => !byId.has(id));
     if (missingIds.length) throw new AppError({ ...errors.students.studentNotFound, message: `${errors.students.studentNotFound.message}: ${missingIds.join(', ')}` });
 
-    const deletedIds = studentIds.filter((id) => byId.get(id).deleted_at !== null);
+    const deletedIds = normalizedStudentIds.filter((id) => byId.get(id).deleted_at !== null);
     if (deletedIds.length) throw new AppError({ ...errors.students.studentDeleted, message: `${errors.students.studentDeleted.message}: ${deletedIds.join(', ')}` });
 
-    const assignedIds = studentIds.filter((id) => byId.get(id).class_id !== null);
+    const assignedIds = normalizedStudentIds.filter((id) => byId.get(id).class_id !== null);
     if (assignedIds.length) throw new AppError({ ...errors.students.studentAlreadyAssigned, message: `${errors.students.studentAlreadyAssigned.message}: ${assignedIds.join(', ')}` });
 
     await client.query(
       'UPDATE tra_student SET class_id = $1, updated_at = NOW() WHERE id = ANY($2::int[]) AND class_id IS NULL AND deleted_at IS NULL',
-      [classId, studentIds]
+      [normalizedClassId, normalizedStudentIds]
     );
     await client.query('COMMIT');
-    return studentIds;
+    return normalizedStudentIds;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -237,19 +289,24 @@ const assignStudents = async (classId, studentIds) => {
 };
 
 const removeStudent = async (classId, studentId) => {
-  const classExists = await existsById(classId);
+  const normalizedClassId = normalizeRequiredId(classId, errors.students.invalidId);
+  const normalizedStudentId = normalizeRequiredId(studentId, errors.students.invalidId);
+  const classExists = await existsById(normalizedClassId);
   if (!classExists) throw new AppError(errors.students.classNotFound);
 
   const studentResult = await pool.query(
     'SELECT id, class_id FROM tra_student WHERE id = $1 AND deleted_at IS NULL',
-    [studentId]
+    [normalizedStudentId]
   );
   if (studentResult.rows.length === 0) throw new AppError(errors.students.studentNotFound);
-  if (studentResult.rows[0].class_id !== classId) throw new AppError(errors.students.studentNotInClass);
+  const studentClassId = studentResult.rows[0].class_id === null
+    ? null
+    : normalizePositiveId(studentResult.rows[0].class_id);
+  if (studentClassId !== normalizedClassId) throw new AppError(errors.students.studentNotInClass);
 
   const result = await pool.query(
     'UPDATE tra_student SET class_id = NULL, updated_at = NOW() WHERE id = $1 AND class_id = $2 AND deleted_at IS NULL RETURNING id',
-    [studentId, classId]
+    [normalizedStudentId, normalizedClassId]
   );
   if (result.rows.length === 0) throw new AppError(errors.students.studentNotInClass);
   return { studentId: result.rows[0].id };
@@ -383,6 +440,7 @@ module.exports = {
   existsById,
   getOneById,
   getStudentsByClass,
+  getAvailableStudentsByClass,
   assignStudents,
   removeStudent,
   massDelete,

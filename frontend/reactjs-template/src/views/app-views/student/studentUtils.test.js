@@ -46,6 +46,20 @@ describe('student shared helpers', () => {
     ).map(record => record.id)).toEqual([1, 2, 3])
   })
 
+  test('uses an explicit string row-key function for number and string API IDs', () => {
+    const selectedRecordsById = {
+      1: { id: 1, fullname: 'ID number' },
+      2: { id: '2', fullname: 'ID string' },
+    }
+    const records = buildDisplayedStudentRecords(
+      [{ id: 1 }, { id: '2' }, { id: 3 }],
+      ['1', '2'],
+      selectedRecordsById,
+      record => String(record.id)
+    )
+    expect(records.map(record => String(record.id))).toEqual(['1', '2', '3'])
+  })
+
   test('select-all changes only records in the current API page', () => {
     expect(getPageScopedSelectionChange({
       apiRecords: [{ id: 2 }, { id: 3 }],
@@ -53,5 +67,15 @@ describe('student shared helpers', () => {
       selected: false,
       selectedRowKeys: [1, 2, 3],
     }).keys).toEqual([1])
+  })
+
+  test('select-all can use string database keys without affecting pinned records', () => {
+    expect(getPageScopedSelectionChange({
+      apiRecords: [{ id: 2 }, { id: '3' }],
+      changeRows: [{ id: 1 }, { id: 2 }, { id: '3' }],
+      selected: false,
+      selectedRowKeys: ['1', '2', '3'],
+      getRecordKey: record => String(record.id),
+    }).keys).toEqual(['1'])
   })
 })

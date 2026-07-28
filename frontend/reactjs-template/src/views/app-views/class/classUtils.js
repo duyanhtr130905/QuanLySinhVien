@@ -16,6 +16,18 @@ export const trimClassSearch = value => (
   typeof value === 'string' ? value.trim() : ''
 )
 
+export const normalizeClassStudentCount = record => Number(record?.student_count || 0)
+
+export const getSelectedClassesWithStudentsCount = (selectedRowKeys, selectedRecordsById) => (
+  asArray(selectedRowKeys).filter(id => (
+    normalizeClassStudentCount(selectedRecordsById?.[id]) > 0
+  )).length
+)
+
+export const isClassDeleteBlockedError = (error, status) => (
+  error?.code === 'G605' || Number(status || error?.response?.status) === 409
+)
+
 export const buildClassOrder = sorter => {
   const sorters = Array.isArray(sorter) ? sorter : [sorter]
   return sorters

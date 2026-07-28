@@ -57,6 +57,28 @@
   margin-top: 16px;
 }
 
+.class-detail-page h1 {
+  margin: 16px 0 20px;
+}
+
+.class-detail-card {
+  max-width: 100%;
+}
+
+.class-detail-table-toolbar,
+.class-detail-modal-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px;
+}
+
+.class-detail-table-toolbar .ant-input-search,
+.class-detail-modal-toolbar .ant-input-search {
+  width: 340px;
+}
+
 @media (max-width: 991px) {
   .class-list-toolbar {
     align-items: flex-start;
@@ -69,6 +91,12 @@
   }
 
   .class-list-toolbar-actions .ant-input-search {
+    flex: 1 1 260px;
+    width: auto;
+  }
+
+  .class-detail-table-toolbar .ant-input-search,
+  .class-detail-modal-toolbar .ant-input-search {
     flex: 1 1 260px;
     width: auto;
   }

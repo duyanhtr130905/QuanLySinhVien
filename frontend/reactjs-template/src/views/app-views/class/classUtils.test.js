@@ -1,5 +1,6 @@
 import {
   buildClassOrder, getChangedClassFields, normalizeMassClassCopyResponse,
+  getSelectedClassesWithStudentsCount, isClassDeleteBlockedError, normalizeClassStudentCount,
   normalizeMassDeleteResponse, trimClassSearch, validateClassValues,
 } from './classUtils'
 import {
@@ -33,6 +34,21 @@ describe('class list helpers', () => {
       deletedIds: [4],
       blockedIds: [5],
     })
+  })
+
+  test('normalizes string student counts and identifies selected blocked classes', () => {
+    expect(normalizeClassStudentCount({ student_count: '3' })).toBe(3)
+    expect(normalizeClassStudentCount({ student_count: null })).toBe(0)
+    expect(getSelectedClassesWithStudentsCount(
+      [1, 2, 3],
+      { 1: { student_count: '2' }, 2: { student_count: 0 }, 3: { student_count: '1' } }
+    )).toBe(2)
+  })
+
+  test('recognizes a class delete conflict from the legacy code or HTTP status', () => {
+    expect(isClassDeleteBlockedError({ code: 'G605' })).toBe(true)
+    expect(isClassDeleteBlockedError({}, 409)).toBe(true)
+    expect(isClassDeleteBlockedError({}, 400)).toBe(false)
   })
 
   test('normalizes partial mass-copy results from the backend message', () => {

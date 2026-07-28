@@ -31,6 +31,7 @@ router.get('/', controller.getAll);
 router.post('/', controller.store);
 
 router.get('/:id/students', controller.getStudents);
+router.get('/:id/available-students', controller.getAvailableStudents);
 router.post('/:id/students', controller.assignStudents);
 router.delete('/:id/students/:studentId', controller.removeStudent);
 router.get('/:id', controller.getById);

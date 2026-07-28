@@ -6,20 +6,22 @@ import {
   Modal, Pagination, Popover, Table, Tooltip,
 } from 'antd'
 import {
-  CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FilterOutlined,
+  CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FilterOutlined,
   ImportOutlined, MoreOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import ColumnChooser from 'components/shared-components/ColumnChooser'
 import DraggableColumnTitle from 'components/shared-components/DraggableColumnTitle'
-import ClassService from 'services/ClassService'
-import { deleteClass, fetchClassList } from 'redux/actions/Class'
+import {
+  copyClass, copyManyClasses, deleteClass, exportClass, fetchClassList, massDeleteClass,
+} from 'redux/actions/Class'
 import {
   buildDisplayedStudentRecords, getPageScopedSelectionChange,
 } from '../../student/studentUtils'
 import {
   buildClassOrder, normalizeClassCopyResponse, normalizeMassClassCopyResponse,
   normalizeMassDeleteResponse, rememberCopiedClassId, saveClassCopyResult,
-  trimClassSearch,
+  getSelectedClassesWithStudentsCount, isClassDeleteBlockedError,
+  normalizeClassStudentCount, trimClassSearch,
 } from '../classUtils'
 import '../Class.css'
 
@@ -37,6 +39,10 @@ const ClassList = () => {
   const pageInfo = useSelector(state => state.classroom.pageInfo)
   const listLoading = useSelector(state => state.classroom.listLoading)
   const listError = useSelector(state => state.classroom.error)
+  const massDeleting = useSelector(state => state.classroom.massDeleteLoading)
+  const copyingClassId = useSelector(state => state.classroom.copyingClassId)
+  const copyingMany = useSelector(state => state.classroom.copyManyLoading)
+  const exportingClassId = useSelector(state => state.classroom.exportingClassId)
   const restoredState = location.state?.classListState
   const restoredQuery = restoredState?.query
   const initialQuery = {
@@ -62,19 +68,18 @@ const ClassList = () => {
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const restored = Array.isArray(restoredState?.visibleColumns)
       ? restoredState.visibleColumns
-      : ['code', 'name', 'description']
+      : ['code', 'name', 'description', 'student_count']
     return [...new Set([...restored, 'code', 'name'])]
   })
   const [columnOrder, setColumnOrder] = useState(() => {
-    const defaultOrder = ['code', 'name', 'description']
+    const defaultOrder = ['code', 'name', 'description', 'student_count']
     const restored = Array.isArray(restoredState?.columnOrder)
       ? restoredState.columnOrder.filter(key => defaultOrder.includes(key))
       : []
     return [...restored, ...defaultOrder.filter(key => !restored.includes(key))]
   })
   const [columnChooserVisible, setColumnChooserVisible] = useState(false)
-  const [copyingClassId, setCopyingClassId] = useState(null)
-  const [copyingMany, setCopyingMany] = useState(false)
+  const [deletingClassId, setDeletingClassId] = useState(null)
 
   const getClassListState = () => ({
     query,
@@ -103,7 +108,9 @@ const ClassList = () => {
     setSelectedRecordsById(current => {
       const next = { ...current }
       apiRecords.forEach(record => {
-        if (selectedRowKeys.includes(record.id)) next[record.id] = record
+        if (selectedRowKeys.includes(record.id)) {
+          next[record.id] = { ...record, student_count: normalizeClassStudentCount(record) }
+        }
       })
       return next
     })
@@ -157,25 +164,29 @@ const ClassList = () => {
     history.push(pathname, { classListState: getClassListState() })
   }
 
-  const reloadAfterRemoval = removedCount => {
-    const nextTotal = Math.max(0, (Number(pageInfo.total_items) || 0) - removedCount)
-    const lastPage = Math.max(1, Math.ceil(nextTotal / query.size))
-    const nextQuery = { ...query, page: Math.min(query.page, lastPage) }
-    setQuery(nextQuery)
-    loadClasses(nextQuery)
+  const reloadAfterRemoval = () => {
+    // page_info from the API remains the sole source of pagination totals.
+    loadClasses(query)
   }
 
   const executeDeleteOne = record => new Promise((resolve, reject) => {
+    if (deletingClassId !== null) {
+      resolve()
+      return
+    }
+    setDeletingClassId(record.id)
     dispatch(deleteClass(
       record.id,
       () => {
         updateSelection(selectedRowKeys.filter(key => key !== record.id))
-        reloadAfterRemoval(1)
+        reloadAfterRemoval()
+        setDeletingClassId(null)
         message.success('Xóa lớp thành công')
         resolve()
       },
       (error, status) => {
-        if (error?.code === 'G605' || Number(status) === 409) {
+        setDeletingClassId(null)
+        if (isClassDeleteBlockedError(error, status)) {
           message.error('Không thể xóa lớp vì vẫn còn sinh viên thuộc lớp này.')
         } else {
           message.error(error?.message || 'Không thể xóa lớp')
@@ -197,11 +208,9 @@ const ClassList = () => {
     })
   }
 
-  const handleCopyOne = async record => {
+  const handleCopyOne = record => {
     if (copyingClassId !== null) return
-    setCopyingClassId(record.id)
-    try {
-      const response = await ClassService.copyOne(record.id)
+    dispatch(copyClass(record.id, response => {
       const created = normalizeClassCopyResponse(response)
       const createdId = Number(created?.id)
       if (!Number.isSafeInteger(createdId) || createdId <= 0) {
@@ -209,21 +218,15 @@ const ClassList = () => {
       }
       rememberCopiedClassId(createdId)
       message.success('Sao chép lớp thành công')
-      history.push(`/app/class/copy/${createdId}`, {
+      history.push(`/app/class/edit/${createdId}`, {
         classListState: getClassListState(),
         copiedClass: created,
       })
-    } catch (error) {
-      message.error(getErrorMessage(error))
-    } finally {
-      setCopyingClassId(null)
-    }
+    }, error => message.error(getErrorMessage(error))))
   }
 
-  const executeMassCopy = async () => {
-    setCopyingMany(true)
-    try {
-      const response = await ClassService.massCopy(selectedRowKeys)
+  const executeMassCopy = () => new Promise((resolve, reject) => {
+    dispatch(copyManyClasses(selectedRowKeys, response => {
       const result = normalizeMassClassCopyResponse(response)
       saveClassCopyResult(result)
       const listState = {
@@ -236,13 +239,12 @@ const ClassList = () => {
         copyResult: result,
         classListState: listState,
       })
-    } catch (error) {
+      resolve()
+    }, error => {
       message.error(getErrorMessage(error))
-      throw error
-    } finally {
-      setCopyingMany(false)
-    }
-  }
+      reject(error)
+    }))
+  })
 
   const confirmMassCopy = () => {
     if (!selectedRowKeys.length || copyingMany) return
@@ -255,33 +257,64 @@ const ClassList = () => {
     })
   }
 
-  const executeMassDelete = async () => {
-    try {
-      const response = await ClassService.massDestroy(selectedRowKeys)
-      const { deletedIds, blockedIds } = normalizeMassDeleteResponse(response)
-      updateSelection(selectedRowKeys.filter(key => !deletedIds.includes(key)))
-      reloadAfterRemoval(deletedIds.length)
-
-      if (blockedIds.length) {
-        message.warning(
-          `Đã xóa ${deletedIds.length} lớp, ${blockedIds.length} lớp không thể xóa vì còn sinh viên.`
-        )
-      } else if (deletedIds.length) {
-        message.success(`Đã xóa ${deletedIds.length} lớp`)
-      } else {
-        message.warning('Không có lớp nào được xóa')
-      }
-    } catch (error) {
-      message.error(getErrorMessage(error))
-      throw error
-    }
+  const handleExportOne = (record, type) => {
+    if (copyingClassId !== null || exportingClassId !== null) return
+    const safeCode = String(record.code || record.id).replace(/[\\/:*?"<>|]/g, '-')
+    dispatch(exportClass(
+      record.id,
+      type,
+      `class-${safeCode}.${type}`,
+      () => message.success('ÄÃ£ báº¯t Ä‘áº§u táº£i file xuáº¥t dá»¯ liá»‡u.'),
+      error => message.error(getErrorMessage(error))
+    ))
   }
 
+  const executeMassDelete = () => new Promise((resolve, reject) => {
+    if (massDeleting) {
+      resolve()
+      return
+    }
+    dispatch(massDeleteClass(
+      selectedRowKeys,
+      response => {
+        const { deletedIds, blockedIds } = normalizeMassDeleteResponse(response)
+        updateSelection(selectedRowKeys.filter(key => !deletedIds.includes(key)))
+        reloadAfterRemoval()
+
+        if (blockedIds.length) {
+          message.warning(
+            `Đã xóa ${deletedIds.length} lớp, ${blockedIds.length} lớp không thể xóa vì còn sinh viên.`
+          )
+        } else if (deletedIds.length) {
+          message.success(`Đã xóa ${deletedIds.length} lớp`)
+        } else {
+          message.warning('Không có lớp nào được xóa')
+        }
+        resolve()
+      },
+      error => {
+        message.error(getErrorMessage(error))
+        reject(error)
+      }
+    ))
+  })
+
   const confirmMassDelete = () => {
-    if (!selectedRowKeys.length) return
+    if (!selectedRowKeys.length || massDeleting) return
+    const selectedWithStudents = getSelectedClassesWithStudentsCount(
+      selectedRowKeys,
+      selectedRecordsById
+    )
     Modal.confirm({
       title: 'Xác nhận xóa lớp',
-      content: `Bạn có chắc chắn muốn xóa ${selectedRowKeys.length} lớp đã chọn không?`,
+      content: (
+        <div>
+          <p>Bạn có chắc chắn muốn xóa {selectedRowKeys.length} lớp đã chọn không?</p>
+          {selectedWithStudents > 0 && (
+            <p>{selectedWithStudents} lớp đang có sinh viên sẽ không bị xóa.</p>
+          )}
+        </div>
+      ),
       okText: 'Xóa',
       okType: 'danger',
       cancelText: 'Hủy',
@@ -292,6 +325,7 @@ const ClassList = () => {
   const handleSearch = value => {
     const search = trimClassSearch(value)
     setSearchInput(search)
+    if (search === query.search && query.page === 1) return
     const nextQuery = { ...query, page: 1, search }
     setQuery(nextQuery)
     loadClasses(nextQuery)
@@ -370,6 +404,15 @@ const ClassList = () => {
         ? <Tooltip title={value}><span>{value}</span></Tooltip>
         : '-',
     },
+    {
+      key: 'student_count',
+      dataIndex: 'student_count',
+      title: 'Số sinh viên',
+      label: 'Số sinh viên',
+      width: 140,
+      align: 'right',
+      render: (_, record) => normalizeClassStudentCount(record),
+    },
   ], [query.order]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const orderedColumns = columnOrder
@@ -390,6 +433,15 @@ const ClassList = () => {
       width: 140,
       render: (_, record) => (
         <div className="d-flex justify-content-end" onClick={event => event.stopPropagation()}>
+          <Tooltip title="Xem chi tiết">
+            <Button
+              type="text"
+              size="small"
+              icon={<EyeOutlined />}
+              aria-label={`Xem chi tiết lớp ${record.name || record.id}`}
+              onClick={() => openClassPage(`/app/class/detail/${record.id}`)}
+            />
+          </Tooltip>
           <Tooltip title="Chỉnh sửa">
             <Button
               type="text"
@@ -398,18 +450,25 @@ const ClassList = () => {
               onClick={() => openClassPage(`/app/class/edit/${record.id}`)}
             />
           </Tooltip>
-          <Tooltip title="Xóa">
-            <Button
-              type="text"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-              onClick={event => confirmDeleteOne(record, event)}
-            />
+          <Tooltip title={normalizeClassStudentCount(record) > 0
+            ? 'Không thể xóa lớp đang có sinh viên.'
+            : 'Xóa'}>
+            <span>
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                aria-label={`Xóa lớp ${record.name || record.id}`}
+                disabled={normalizeClassStudentCount(record) > 0 || deletingClassId !== null}
+                loading={deletingClassId === record.id}
+                onClick={event => confirmDeleteOne(record, event)}
+              />
+            </span>
           </Tooltip>
           <Dropdown
             trigger={['click']}
-            disabled={copyingClassId !== null}
+            disabled={copyingClassId !== null || exportingClassId !== null}
             overlay={(
               <Menu onClick={({ domEvent }) => domEvent?.stopPropagation()}>
                 <Menu.Item
@@ -419,6 +478,12 @@ const ClassList = () => {
                 >
                   Sao chép
                 </Menu.Item>
+                <Menu.SubMenu key="export" icon={<DownloadOutlined />} title="Export">
+                  <Menu.Item key="export-csv" onClick={() => handleExportOne(record, 'csv')}>CSV</Menu.Item>
+                  <Menu.Item key="export-xlsx" onClick={() => handleExportOne(record, 'xlsx')}>XLSX</Menu.Item>
+                  <Menu.Item key="export-json" onClick={() => handleExportOne(record, 'json')}>JSON</Menu.Item>
+                  <Menu.Item key="export-xml" onClick={() => handleExportOne(record, 'xml')}>XML</Menu.Item>
+                </Menu.SubMenu>
               </Menu>
             )}
           >
@@ -426,7 +491,7 @@ const ClassList = () => {
               type="text"
               size="small"
               icon={<MoreOutlined />}
-              loading={copyingClassId === record.id}
+              loading={copyingClassId === record.id || exportingClassId === record.id}
               onClick={event => event.stopPropagation()}
             />
           </Dropdown>
@@ -434,16 +499,17 @@ const ClassList = () => {
       ),
     })
 
+  const normalizedApiRecords = useMemo(() => apiRecords.map(record => ({
+    ...record,
+    student_count: normalizeClassStudentCount(record),
+  })), [apiRecords])
   const displayedRecords = buildDisplayedStudentRecords(
-    apiRecords,
+    normalizedApiRecords,
     selectedRowKeys,
     selectedRecordsById
   )
   const totalItems = Number(pageInfo.total_items) || 0
-  const totalPages = Math.max(
-    1,
-    Number(pageInfo.total_pages) || Math.ceil(totalItems / query.size)
-  )
+  const totalPages = Number(pageInfo.total_pages) || 0
   const hasSelection = selectedRowKeys.length > 0
 
   const actionMenu = (
@@ -475,7 +541,7 @@ const ClassList = () => {
         key="delete"
         danger
         icon={<DeleteOutlined />}
-        disabled={!hasSelection}
+        disabled={!hasSelection || massDeleting}
         onClick={confirmMassDelete}
       >
         Xóa dữ liệu đã chọn

@@ -54,32 +54,55 @@ describe('ClassService backend contracts', () => {
     })
   })
 
-  test('loads edit data from GET /class/ because GET /class/:id does not exist', async () => {
-    fetch.mockResolvedValue({
-      data: [
-        { id: 1, code: 'A' },
-        { id: 2, code: 'B' },
-      ],
-    })
-    await expect(ClassService.getById(2)).resolves.toEqual({
-      data: { id: 2, code: 'B' },
-    })
+  test('loads edit data from GET /class/:id', () => {
+    ClassService.getById(2)
     expect(fetch).toHaveBeenCalledWith({
-      url: '/class/',
+      url: '/class/2',
       method: 'get',
-      params: {
-        columnlist: 'id,code,name,description,created_at,updated_at',
-      },
     })
   })
 
-  test('rejects a missing ID without guessing a GET /class/:id endpoint', async () => {
-    fetch.mockResolvedValue({ data: [] })
-    await expect(ClassService.getById(99)).rejects.toMatchObject({
-      response: {
-        status: 404,
-        data: { code: 'F604' },
-      },
+  test('uses only class-student relationship endpoints for detail membership flows', () => {
+    const params = { page: 2, size: 5, search: 'An', order: 'fn:0', columnlist: 'id,fullname' }
+    ClassService.getClassStudents(7, params)
+    ClassService.getAvailableStudents(7, params)
+    ClassService.addStudentsToClass(7, [3, 4])
+    ClassService.removeStudentFromClass(7, 3)
+    expect(fetch).toHaveBeenNthCalledWith(1, {
+      url: '/class/7/students', method: 'get', params,
+    })
+    expect(fetch).toHaveBeenNthCalledWith(2, {
+      url: '/class/7/available-students', method: 'get', params,
+    })
+    expect(fetch).toHaveBeenNthCalledWith(3, {
+      url: '/class/7/students', method: 'post', data: { studentIds: [3, 4] },
+    })
+    expect(fetch).toHaveBeenNthCalledWith(4, {
+      url: '/class/7/students/3', method: 'delete',
+    })
+    expect(fetch).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/student/3', method: 'delete' }))
+  })
+
+  test('uses the Class copy, multipart import, and binary export contracts', () => {
+    const formData = new FormData()
+    formData.append('file', new Blob(['code,name'], { type: 'text/csv' }), 'classes.csv')
+    ClassService.copyOne(7)
+    ClassService.copyMany([7, 8])
+    ClassService.importClasses(formData)
+    ClassService.exportOne(7, 'csv')
+    ClassService.exportMany([7, 8], 'xml')
+    expect(fetch).toHaveBeenNthCalledWith(1, { url: '/class/copy/7', method: 'post' })
+    expect(fetch).toHaveBeenNthCalledWith(2, {
+      url: '/class/copy', method: 'post', data: { idlist: [7, 8] },
+    })
+    expect(fetch).toHaveBeenNthCalledWith(3, {
+      url: '/class/import', method: 'post', data: formData,
+    })
+    expect(fetch).toHaveBeenNthCalledWith(4, {
+      url: '/class/export/7', method: 'get', params: { type: 'csv' }, responseType: 'blob', returnFullResponse: true,
+    })
+    expect(fetch).toHaveBeenNthCalledWith(5, {
+      url: '/class/export', method: 'post', data: { idlist: [7, 8], type: 'xml' }, responseType: 'blob', returnFullResponse: true,
     })
   })
 })

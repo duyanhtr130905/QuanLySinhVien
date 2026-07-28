@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { Link, useHistory, useLocation, useParams } from 'react-router-dom'
+import { Link, Prompt, useHistory, useLocation, useParams } from 'react-router-dom'
 import {
   Breadcrumb, Button, Card, Form, Input, message, Modal, Result, Skeleton,
 } from 'antd'
@@ -54,8 +54,10 @@ const ClassForm = ({ mode = 'create' }) => {
   ))
   const [dirty, setDirty] = useState(false)
   const [submitMode, setSubmitMode] = useState(null)
+  const codeInputRef = useRef(null)
   const initializedIdRef = useRef(null)
   const initialValuesRef = useRef(null)
+  const allowNavigationRef = useRef(false)
   const listState = location.state?.classListState
   const listRoute = {
     pathname: '/app/class/list',
@@ -72,9 +74,29 @@ const ClassForm = ({ mode = 'create' }) => {
 
   useEffect(() => {
     if (!isRecordEdit || !validId || copiedClass) return undefined
+    initializedIdRef.current = null
+    initialValuesRef.current = null
+    setDirty(false)
     dispatch(fetchClassDetail(numericId))
     return () => dispatch(clearClassDetail())
   }, [copiedClass, dispatch, isRecordEdit, numericId, validId])
+
+  useEffect(() => {
+    if (isRecordEdit) return undefined
+    codeInputRef.current?.focus()
+    return undefined
+  }, [isRecordEdit])
+
+  useEffect(() => {
+    const warnBeforeUnload = event => {
+      if (!dirty || allowNavigationRef.current) return undefined
+      event.preventDefault()
+      event.returnValue = ''
+      return ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [dirty])
 
   useEffect(() => {
     if (!isRecordEdit || !formRecord || Number(formRecord.id) !== numericId) return
@@ -100,6 +122,7 @@ const ClassForm = ({ mode = 'create' }) => {
     initialValuesRef.current = null
     setDirty(false)
     setSubmitMode(null)
+    setTimeout(() => codeInputRef.current?.focus(), 0)
   }
 
   const handleSubmit = continueAfterCreate => {
@@ -116,8 +139,7 @@ const ClassForm = ({ mode = 'create' }) => {
               if (continueAfterCreate) {
                 resetCreateForm()
               } else {
-                setDirty(false)
-                history.push(listRoute)
+                leavePage()
               }
             },
             error => {
@@ -139,9 +161,8 @@ const ClassForm = ({ mode = 'create' }) => {
           numericId,
           changedFields,
           () => {
-            setDirty(false)
             message.success(isCopy ? 'Lưu bản sao lớp thành công' : 'Cập nhật lớp thành công')
-            history.push(cancelRoute)
+            leavePage()
           },
           error => {
             setSubmitMode(null)
@@ -156,7 +177,11 @@ const ClassForm = ({ mode = 'create' }) => {
       })
   }
 
-  const leavePage = () => history.push(cancelRoute)
+  const leavePage = () => {
+    allowNavigationRef.current = true
+    setDirty(false)
+    history.push(cancelRoute)
+  }
 
   const handleCancel = () => {
     if (submitting) return
@@ -217,6 +242,10 @@ const ClassForm = ({ mode = 'create' }) => {
 
   return (
     <div className="class-form-page">
+      <Prompt
+        when={dirty && !allowNavigationRef.current}
+        message="Các thay đổi chưa được lưu. Bạn có chắc chắn muốn rời khỏi trang?"
+      />
       <Breadcrumb>
         <Breadcrumb.Item><Link to={listRoute}>Quản lý danh mục</Link></Breadcrumb.Item>
         <Breadcrumb.Item><Link to={listRoute}>Danh mục Lớp</Link></Breadcrumb.Item>
@@ -238,6 +267,7 @@ const ClassForm = ({ mode = 'create' }) => {
               rules={[requiredTrimmedRule('mã lớp', 50)]}
             >
               <Input
+                ref={codeInputRef}
                 maxLength={50}
                 disabled={isRecordEdit}
                 suffix={isRecordEdit ? <LockOutlined /> : null}
@@ -254,6 +284,15 @@ const ClassForm = ({ mode = 'create' }) => {
             <Form.Item name="description" label="Mô tả">
               <TextArea rows={5} placeholder="Nhập mô tả lớp (không bắt buộc)" />
             </Form.Item>
+            {isRecordEdit && (
+              <Form.Item label="Số sinh viên">
+                <Input
+                  disabled
+                  value={Number(formRecord?.student_count || 0)}
+                  aria-label="Số sinh viên"
+                />
+              </Form.Item>
+            )}
 
             <div className="class-form-actions">
               <Button disabled={submitting} onClick={handleCancel}>Hủy bỏ</Button>

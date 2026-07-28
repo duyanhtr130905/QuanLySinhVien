@@ -47,6 +47,34 @@ test('class.getStudents parses paging and reports a missing class', async () => 
   assert.ok(missingRes.body.message);
 });
 
+test('class.getAvailableStudents keeps the student-list contract and reports a missing class', async () => {
+  const calls = [];
+  const controller = controllerFor({
+    getAvailableStudentsByClass: async (...args) => {
+      calls.push(args);
+      return { page_info: { current: 1, total_items: 0 }, records: [] };
+    },
+  });
+  const res = makeRes();
+  await controller.getAvailableStudents(makeReq({
+    params: { id: '7' },
+    query: { page: '1', size: '5', search: 'An', order: 'fn:1', columnlist: 'id,fullname' },
+  }), res, makeNext());
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.code, '200');
+  assert.deepEqual(res.body.data, { page_info: { current: 1, total_items: 0 }, records: [] });
+  assert.deepEqual(calls, [[7, {
+    page: 1, size: 5, search: 'An', order: 'fn:1', columnlist: 'id,fullname', toplist: [],
+  }]]);
+
+  const missing = controllerFor({ getAvailableStudentsByClass: async () => null });
+  const missingRes = makeRes();
+  await missing.getAvailableStudents(makeReq({ params: { id: '7' }, query: { page: '1', size: '5' } }), missingRes, makeNext());
+  assert.equal(missingRes.statusCode, 404);
+  assert.equal(missingRes.body.code, 'L604');
+  assert.equal(missingRes.body.data, null);
+});
+
 test('class.assignStudents de-duplicates ids and preserves expected service errors', async () => {
   const calls = [];
   const controller = controllerFor({ assignStudents: async (...args) => { calls.push(args); return args[1]; } });

@@ -18,20 +18,11 @@ ClassService.getAll = function (params) {
   })
 }
 
-ClassService.getById = async function (id) {
-  const response = await ClassService.getAll({
-    columnlist: 'id,code,name,description,created_at,updated_at',
+ClassService.getById = function (id) {
+  return fetch({
+    url: `/class/${id}`,
+    method: 'get',
   })
-  const records = Array.isArray(response?.data) ? response.data : []
-  const record = records.find(item => Number(item.id) === Number(id))
-  if (record) return { ...response, data: record }
-
-  const error = new Error('Không tìm thấy bản ghi lớp học')
-  error.response = {
-    status: 404,
-    data: { code: 'F604', message: error.message },
-  }
-  throw error
 }
 
 ClassService.create = function (data) {
@@ -77,6 +68,68 @@ ClassService.massCopy = function (idlist) {
     url: '/class/copy',
     method: 'post',
     data: { idlist },
+  })
+}
+
+// Kept as an alias for older Class screens while new flows use the explicit name.
+ClassService.copyMany = ClassService.massCopy
+
+ClassService.importClasses = function (formData) {
+  return fetch({
+    url: '/class/import',
+    method: 'post',
+    data: formData,
+  })
+}
+
+ClassService.exportOne = function (id, type) {
+  return fetch({
+    url: `/class/export/${id}`,
+    method: 'get',
+    params: { type },
+    responseType: 'blob',
+    returnFullResponse: true,
+  })
+}
+
+ClassService.exportMany = function (idlist, type) {
+  return fetch({
+    url: '/class/export',
+    method: 'post',
+    data: { idlist, type },
+    responseType: 'blob',
+    returnFullResponse: true,
+  })
+}
+
+ClassService.getClassStudents = function (id, params) {
+  return fetch({
+    url: `/class/${id}/students`,
+    method: 'get',
+    params,
+  })
+}
+
+ClassService.getAvailableStudents = function (id, params) {
+  return fetch({
+    url: `/class/${id}/available-students`,
+    method: 'get',
+    params,
+  })
+}
+
+ClassService.addStudentsToClass = function (id, studentIds) {
+  return fetch({
+    url: `/class/${id}/students`,
+    method: 'post',
+    data: { studentIds },
+  })
+}
+
+ClassService.removeStudentFromClass = function (classId, studentId) {
+  return fetch({
+    url: `/class/${classId}/students/${studentId}`,
+    method: 'delete',
   })
 }
 

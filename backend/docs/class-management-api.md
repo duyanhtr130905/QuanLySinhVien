@@ -44,6 +44,15 @@ Invalid id returns `400 D601`; a missing Class returns `404 D604`.
 - The response data is `{ "page_info": {}, "records": [] }`, using the existing page-info shape.
 - A missing Class returns `404 L604`; invalid path/query values use `L601`, `L609`, or `L610`.
 
+## Available Students for a Class
+
+`GET /class/:id/available-students` accepts required query parameters `page` and `size`, and optional `search`, `order`, and `columnlist`. It uses the same Student column allowlist, order aliases, pagination shape, and search fields as `GET /class/:id/students`.
+
+- The requested Class must exist; otherwise the response is `404 L604`.
+- Only active, unassigned Students are returned: `class_id IS NULL` and `deleted_at IS NULL`.
+- `password` is never selectable or returned.
+- The response envelope data is `{ "page_info": {}, "records": [] }`.
+
 ## Assign and remove existing Students
 
 `POST /class/:id/students` accepts:

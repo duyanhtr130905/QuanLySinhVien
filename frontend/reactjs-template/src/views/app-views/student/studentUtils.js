@@ -78,18 +78,19 @@ export const getSafeHttpUrl = value => {
 export const buildDisplayedStudentRecords = (
   apiRecords,
   selectedRowKeys,
-  selectedRecordsById
+  selectedRecordsById,
+  getRecordKey = record => record.id
 ) => {
   const records = Array.isArray(apiRecords) ? apiRecords : []
   const keys = Array.isArray(selectedRowKeys) ? selectedRowKeys : []
   const recordsById = selectedRecordsById && typeof selectedRecordsById === 'object'
     ? selectedRecordsById
     : {}
-  const selectedKeySet = new Set(keys)
+  const selectedKeySet = new Set(keys.map(String))
   const pinnedRecords = keys.map(key => recordsById[key]).filter(Boolean)
   return [
     ...pinnedRecords,
-    ...records.filter(record => !selectedKeySet.has(record.id)),
+    ...records.filter(record => !selectedKeySet.has(String(getRecordKey(record)))),
   ]
 }
 
@@ -98,13 +99,14 @@ export const getPageScopedSelectionChange = ({
   changeRows,
   selected,
   selectedRowKeys,
+  getRecordKey = record => record.id,
 }) => {
   const records = Array.isArray(apiRecords) ? apiRecords : []
   const changed = Array.isArray(changeRows) ? changeRows : []
   const keys = Array.isArray(selectedRowKeys) ? selectedRowKeys : []
-  const currentPageIds = new Set(records.map(record => record.id))
-  const scopedChangeRows = changed.filter(record => currentPageIds.has(record.id))
-  const changedIds = new Set(scopedChangeRows.map(record => record.id))
+  const currentPageIds = new Set(records.map(getRecordKey))
+  const scopedChangeRows = changed.filter(record => currentPageIds.has(getRecordKey(record)))
+  const changedIds = new Set(scopedChangeRows.map(getRecordKey))
   return {
     keys: selected
       ? [...new Set([...keys, ...changedIds])]

@@ -53,6 +53,17 @@ const getStudents = createGetByPageHandler({
   notFound: errors.students.classNotFound,
 });
 
+const getAvailableStudents = createGetByPageHandler({
+  service: (...args) => classService.getAvailableStudentsByClass(...args),
+  requestParser: (req) => [
+    validator.parseClassStudentsId(req.params.id),
+    validator.parseClassStudentsPageQuery(req.query),
+  ],
+  successMessage: 'Lấy danh sách sinh viên có thể thêm vào lớp thành công',
+  fallbackCode: 'L600',
+  notFound: errors.students.classNotFound,
+});
+
 // POST /class
 const store = asyncHandler(async (req, res) => {
   try {
@@ -261,6 +272,7 @@ module.exports = {
   getByPage,
   getById,
   getStudents,
+  getAvailableStudents,
   store,
   update,
   destroy,
