@@ -3,6 +3,7 @@ import moment from 'moment'
 export const STUDENT_ORDER_ALIASES = {
   code: 'co',
   fullname: 'fn',
+  deleted_at: 'da',
 }
 
 export const buildStudentOrder = sorter => {

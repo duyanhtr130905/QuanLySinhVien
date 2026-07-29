@@ -45,6 +45,13 @@ const getByPage = createGetByPageHandler({
   fallbackCode: 'C600',
 });
 
+const getDeletedByPage = createGetByPageHandler({
+  service: (...args) => studentService.getDeletedByPage(...args),
+  requestParser: (req) => [validator.parseGetByPage(req.query)],
+  successMessage: 'L\u1ea5y danh s\u00e1ch sinh vi\u00ean \u0111\u00e3 x\u00f3a th\u00e0nh c\u00f4ng',
+  fallbackCode: 'L600',
+});
+
 // GET /student/:id
 const getById = createGetByIdHandler({
   service: (...args) => studentService.getOneById(...args),
@@ -140,6 +147,45 @@ const massDestroy = asyncHandler(async (req, res) => {
   } catch (error) {
     if (sendExpectedError(res, error)) return undefined;
     error.fallbackCode = 'G600';
+    throw error;
+  }
+});
+
+const restoreDeleted = asyncHandler(async (req, res) => {
+  try {
+    const result = await studentService.restoreDeleted(validator.parseTrashIdList(req.body.idlist));
+    return successResponse(
+      res,
+      result,
+      `\u0110\u00e3 kh\u00f4i ph\u1ee5c ${result.restored.length} sinh vi\u00ean`
+    );
+  } catch (error) {
+    if (sendExpectedError(res, error)) return undefined;
+    error.fallbackCode = 'L600';
+    throw error;
+  }
+});
+
+const permanentlyDelete = asyncHandler(async (req, res) => {
+  try {
+    const result = await studentService.permanentlyDelete(validator.parseTrashIdList(req.body.idlist));
+    // Storage cleanup is deliberately after commit: a failed remote cleanup never rolls back DB deletion.
+    for (const attachmentUrl of result.attachmentsToDelete) {
+      try {
+        await studentService.deleteAttachment(attachmentUrl);
+      } catch (error) {
+        console.error('Could not remove permanently deleted student attachment:', error.message);
+      }
+    }
+
+    return successResponse(
+      res,
+      { deleted: result.deleted, notFound: result.notFound },
+      `\u0110\u00e3 x\u00f3a v\u0129nh vi\u1ec5n ${result.deleted.length} sinh vi\u00ean`
+    );
+  } catch (error) {
+    if (sendExpectedError(res, error)) return undefined;
+    error.fallbackCode = 'L600';
     throw error;
   }
 });
@@ -256,11 +302,14 @@ const massExport = asyncHandler(async (req, res) => {
 module.exports = {
   getAll,
   getByPage,
+  getDeletedByPage,
   getById,
   store,
   update,
   destroy,
   massDestroy,
+  restoreDeleted,
+  permanentlyDelete,
   copyOne,
   massCopy,
   importStudents,

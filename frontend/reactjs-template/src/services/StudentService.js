@@ -10,6 +10,30 @@ StudentService.getByPage = function (params) {
   })
 }
 
+StudentService.getDeletedByPage = function (params) {
+  return fetch({
+    url: '/student/deleted/page',
+    method: 'get',
+    params,
+  })
+}
+
+StudentService.restoreDeleted = function (idlist) {
+  return fetch({
+    url: '/student/deleted/restore',
+    method: 'patch',
+    data: { idlist },
+  })
+}
+
+StudentService.permanentlyDelete = function (idlist) {
+  return fetch({
+    url: '/student/deleted/permanent',
+    method: 'delete',
+    data: { idlist },
+  })
+}
+
 StudentService.getById = function (id) {
   return fetch({
     url: `/student/${id}`,

@@ -71,3 +71,22 @@ test('list repository applies student soft-delete base filter without exposing p
   assert.match(pool.calls[1][0], /WHERE deleted_at IS NULL/);
   assert.doesNotMatch(pool.calls[1][0], /password/);
 });
+
+test('list repository can page only deleted students without exposing password columns', async () => {
+  const pool = createPool([{ rows: [{ count: '1' }] }, { rows: [{ id: 8, deleted_at: '2026-01-01' }] }]);
+  const repository = createListRepository({
+    pool,
+    tableName: 'tra_student',
+    validColumns: ['id', 'fullname', 'email', 'deleted_at'],
+    defaultColumns: ['id', 'fullname', 'email', 'deleted_at'],
+    columnAliases: { fn: 'fullname', da: 'deleted_at' },
+    searchColumns: ['fullname', 'email'],
+    deletedFilter: 'deleted_at IS NOT NULL',
+    defaultOrder: 'ORDER BY deleted_at DESC, id DESC',
+  });
+  const page = await repository.getByPage({ page: 1, size: 10, order: 'da:1', search: undefined, columnlist: undefined, toplist: [] });
+  assert.deepEqual(page.records, [{ id: 8, deleted_at: '2026-01-01' }]);
+  assert.match(pool.calls[0][0], /WHERE deleted_at IS NOT NULL/);
+  assert.doesNotMatch(pool.calls[1][0], /password/);
+  assert.match(pool.calls[1][0], /ORDER BY\s+deleted_at DESC/);
+});

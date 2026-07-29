@@ -244,6 +244,7 @@ const StudentList = () => {
   const openStudentEdit = id => openStudentPage(`/app/student/edit/${id}`)
   const openStudentImport = () => openStudentPage('/app/student/import')
   const openStudentExport = () => openStudentPage('/app/student/export')
+  const openStudentDeleted = () => openStudentPage('/app/student/deleted')
 
   const orderedColumnConfig = useMemo(() => columnOrder
     .map(key => columnConfig.find(column => column.key === key))
@@ -568,6 +569,7 @@ const StudentList = () => {
       <Menu.Item key="export" icon={<DownloadOutlined />} onClick={openStudentExport}>Xuất dữ liệu theo mẫu</Menu.Item>
       <Menu.Item key="copy" icon={<CopyOutlined />} disabled={!hasSelection || copyingMany} onClick={handleBulkCopy}>Sao chép dữ liệu đã chọn</Menu.Item>
       <Menu.Divider />
+      <Menu.Item key="deleted" icon={<DeleteOutlined />} onClick={openStudentDeleted}>Xem dữ liệu đã xóa</Menu.Item>
       <Menu.Item key="delete" icon={<DeleteOutlined />} danger disabled={!hasSelection} onClick={confirmBulkDelete}>Xóa dữ liệu đã chọn</Menu.Item>
     </Menu>
   )

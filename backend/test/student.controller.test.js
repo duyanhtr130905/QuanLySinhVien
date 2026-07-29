@@ -54,6 +54,32 @@ test('student.getByPage parses toplist and forwards the current service object',
   assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: 'An', columnlist: undefined, toplist: [2, 5] }]]);
 });
 
+test('student trash endpoints keep page, restore, permanent-delete, and partial-success contracts', async () => {
+  const pageCalls = [];
+  const page = controllerFor({ getDeletedByPage: async (...args) => { pageCalls.push(args); return { page_info: { current: 1 }, records: [{ id: 4, deleted_at: '2026-01-01' }] }; } });
+  const pageRes = makeRes();
+  await page.getDeletedByPage(makeReq({ query: { page: '1', size: '10' } }), pageRes, makeNext());
+  expectApiResponse(pageRes, 200, '200', 'Lấy danh sách sinh viên đã xóa thành công', { page_info: { current: 1 }, records: [{ id: 4, deleted_at: '2026-01-01' }] });
+  assert.deepEqual(pageCalls, [[{ page: 1, size: 10, order: undefined, search: undefined, columnlist: undefined, toplist: [] }]]);
+
+  const restoreCalls = [];
+  const restore = controllerFor({ restoreDeleted: async (...args) => { restoreCalls.push(args); return { restored: [4], notFound: [8], conflicts: [9] }; } });
+  const restoreRes = makeRes();
+  await restore.restoreDeleted(makeReq({ body: { idlist: [4, 8, 9] } }), restoreRes, makeNext());
+  expectApiResponse(restoreRes, 200, '200', 'Đã khôi phục 1 sinh viên', { restored: [4], notFound: [8], conflicts: [9] });
+  assert.deepEqual(restoreCalls, [[[4, 8, 9]]]);
+
+  const deletedAttachments = [];
+  const permanent = controllerFor({
+    permanentlyDelete: async () => ({ deleted: [4], notFound: [8], attachmentsToDelete: ['https://storage/a.png'] }),
+    deleteAttachment: async (url) => { deletedAttachments.push(url); },
+  });
+  const permanentRes = makeRes();
+  await permanent.permanentlyDelete(makeReq({ body: { idlist: [4, 8] } }), permanentRes, makeNext());
+  expectApiResponse(permanentRes, 200, '200', 'Đã xóa vĩnh viễn 1 sinh viên', { deleted: [4], notFound: [8] });
+  assert.deepEqual(deletedAttachments, ['https://storage/a.png']);
+});
+
 test('student.store validates before upload/store while still fetching the active hobby mask', async () => {
   let stored = false;
   const controller = controllerFor({

@@ -51,6 +51,17 @@ const listRepository = createListRepository({
   defaultOrder: 'ORDER BY id ASC',
 });
 
+const deletedListRepository = createListRepository({
+  pool,
+  tableName: 'tra_student',
+  validColumns: VALID_COLUMNS,
+  defaultColumns: VALID_COLUMNS,
+  columnAliases: { ...COLUMN_ALIAS, da: 'deleted_at' },
+  searchColumns: ['fullname', 'description', 'email'],
+  deletedFilter: 'deleted_at IS NOT NULL',
+  defaultOrder: 'ORDER BY deleted_at DESC, id DESC',
+});
+
 // ============================================================
 // 1. GET ALL
 // ============================================================
@@ -80,6 +91,7 @@ const listRepository = createListRepository({
  * RETURNING liệt kê rõ cột — KHÔNG có password trong response.
  */
 const { getAll, getByPage } = listRepository;
+const { getByPage: getDeletedByPage } = deletedListRepository;
 
 const store = async (data) => {
   const {
@@ -255,6 +267,114 @@ const massDestroy = async (idlist) => {
   }
 };
 
+const normalizeTrashIds = (idlist) => [...new Set((Array.isArray(idlist) ? idlist : [])
+  .map(Number)
+  .filter((id) => Number.isSafeInteger(id) && id > 0))];
+
+const getRestoreConflicts = async (client, student) => {
+  const result = await client.query(
+    `SELECT code, email, username
+     FROM tra_student
+     WHERE deleted_at IS NULL
+       AND (code = $1 OR email = $2 OR username = $3)
+     LIMIT 1`,
+    [student.code, student.email, student.username]
+  );
+  return result.rows.length > 0;
+};
+
+const restoreDeleted = async (idlist) => {
+  const ids = normalizeTrashIds(idlist);
+  const client = await pool.connect();
+  const restored = [];
+  const notFound = [];
+  const conflicts = [];
+
+  try {
+    await client.query('BEGIN');
+    for (const id of ids) {
+      const found = await client.query(
+        `SELECT id, code, email, username
+         FROM tra_student
+         WHERE id = $1 AND deleted_at IS NOT NULL
+         FOR UPDATE`,
+        [id]
+      );
+      if (!found.rows.length) {
+        notFound.push(id);
+        continue;
+      }
+      if (await getRestoreConflicts(client, found.rows[0])) {
+        conflicts.push(id);
+        continue;
+      }
+
+      await client.query('SAVEPOINT restore_student');
+      try {
+        const updated = await client.query(
+          'UPDATE tra_student SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id',
+          [id]
+        );
+        if (updated.rows.length) restored.push(id);
+        else notFound.push(id);
+      } catch (error) {
+        await client.query('ROLLBACK TO SAVEPOINT restore_student');
+        if (error.code === '23505') conflicts.push(id);
+        else throw error;
+      }
+    }
+    await client.query('COMMIT');
+    return { restored, notFound, conflicts };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+const permanentlyDelete = async (idlist) => {
+  const ids = normalizeTrashIds(idlist);
+  const client = await pool.connect();
+  const deleted = [];
+  const notFound = [];
+  const attachmentCandidates = [];
+
+  try {
+    await client.query('BEGIN');
+    for (const id of ids) {
+      const removed = await client.query(
+        `DELETE FROM tra_student
+         WHERE id = $1 AND deleted_at IS NOT NULL
+         RETURNING id, attachment`,
+        [id]
+      );
+      if (!removed.rows.length) {
+        notFound.push(id);
+        continue;
+      }
+      deleted.push(id);
+      if (removed.rows[0].attachment) attachmentCandidates.push(removed.rows[0].attachment);
+    }
+
+    const attachmentsToDelete = [];
+    for (const attachment of [...new Set(attachmentCandidates)]) {
+      const references = await client.query(
+        'SELECT COUNT(*) AS count FROM tra_student WHERE attachment = $1',
+        [attachment]
+      );
+      if (Number(references.rows[0].count) === 0) attachmentsToDelete.push(attachment);
+    }
+    await client.query('COMMIT');
+    return { deleted, notFound, attachmentsToDelete };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 // ============================================================
 // HOBBY MASK
 // ============================================================
@@ -300,7 +420,10 @@ const deleteAttachment = async (url) => {
   if (!url) return;
   const supabase = require('../../config/supabaseStorage');
   const path = url.split('/student-attachments/')[1];
-  if (path) await supabase.storage.from('student-attachments').remove([path]);
+  if (path) {
+    const { error } = await supabase.storage.from('student-attachments').remove([path]);
+    if (error) throw error;
+  }
 };
 
 /**
@@ -443,7 +566,8 @@ const getOneById = async (id) => {
 
 module.exports = {
 
-  getAll, getByPage, store, update, destroy,massDestroy,
+  getAll, getByPage, getDeletedByPage, store, update, destroy,massDestroy,
+  restoreDeleted, permanentlyDelete,
   getActiveHobbyMask,
   uploadAttachment, deleteAttachment, getAttachmentById,
   copyOne, massCopy, getManyByIds, getOneById,

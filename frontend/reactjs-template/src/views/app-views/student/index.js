@@ -8,12 +8,14 @@ import StudentImport from './student-import';
 import StudentExport from './student-export/StudentExport';
 import StudentCopy from './student-copy/StudentCopy';
 import StudentCopyResult from './student-copy/StudentCopyResult';
+import StudentDeletedList from './student-deleted-list/StudentDeletedList';
 
 const Student = ({ match }) => {
 	return (
 		<Switch>
 			<Redirect exact from={`${match.url}`} to={`${match.url}/list`} />
 			<Route path={`${match.url}/create`} component={StudentCreate} />
+			<Route path={`${match.url}/deleted`} component={StudentDeletedList} />
 			<Route path={`${match.url}/edit/:id`} component={StudentEdit} />
 			<Route path={`${match.url}/import`} component={StudentImport} />
 			<Route path={`${match.url}/export`} component={StudentExport} />

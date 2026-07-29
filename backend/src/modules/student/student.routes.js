@@ -54,6 +54,11 @@ const uploadDataFile = multer({
 router.get('/page', controller.getByPage);
 router.get('/page/:init', controller.getByPage);
 
+// Th\u00f9ng r\u00e1c ph\u1ea3i \u0111\u1eb7t tr\u01b0\u1edbc /:id \u0111\u1ec3 Express kh\u00f4ng match nh\u1ea7m.
+router.get('/deleted/page', controller.getDeletedByPage);
+router.patch('/deleted/restore', controller.restoreDeleted);
+router.delete('/deleted/permanent', controller.permanentlyDelete);
+
 // Sao chép (path cố định /copy phải trước /copy/:id)
 router.post('/copy', controller.massCopy);
 router.post('/copy/:id', controller.copyOne);

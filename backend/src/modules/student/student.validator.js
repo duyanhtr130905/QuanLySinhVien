@@ -75,6 +75,7 @@ module.exports = {
   parseUpdateId: (value) => parseLegacyId(value, errors.update.invalidId),
   parseDestroyId: (value) => parseLegacyId(value, errors.destroy.invalidId),
   parseMassDestroyIdList: (value) => parseLegacyIdList(value, errors.destroy.invalidIdList),
+  parseTrashIdList: (value) => parseIdList(value, { errorConfig: errors.trash.invalidIdList }),
   parseCopyOneId: (value) => parseLegacyId(value, errors.copy.invalidId),
   parseMassCopyIdList: (value) => parseLegacyIdList(value, errors.copy.invalidIdList),
   isValidExportType,
