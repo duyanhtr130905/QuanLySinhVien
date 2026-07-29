@@ -11,15 +11,15 @@ import {
 } from '@ant-design/icons'
 import ColumnChooser from 'components/shared-components/ColumnChooser'
 import DraggableColumnTitle from 'components/shared-components/DraggableColumnTitle'
+import ClassService from 'services/ClassService'
 import {
-  copyClass, copyManyClasses, deleteClass, exportClass, fetchClassList, massDeleteClass,
+  deleteClass, exportClass, fetchClassList, massDeleteClass,
 } from 'redux/actions/Class'
 import {
   buildDisplayedStudentRecords, getPageScopedSelectionChange,
 } from '../../student/studentUtils'
 import {
-  buildClassOrder, normalizeClassCopyResponse, normalizeMassClassCopyResponse,
-  normalizeMassDeleteResponse, rememberCopiedClassId, saveClassCopyResult,
+  buildClassOrder, normalizeMassDeleteResponse,
   getSelectedClassesWithStudentsCount, isClassDeleteBlockedError,
   normalizeClassStudentCount, trimClassSearch,
 } from '../classUtils'
@@ -40,8 +40,8 @@ const ClassList = () => {
   const listLoading = useSelector(state => state.classroom.listLoading)
   const listError = useSelector(state => state.classroom.error)
   const massDeleting = useSelector(state => state.classroom.massDeleteLoading)
-  const copyingClassId = useSelector(state => state.classroom.copyingClassId)
-  const copyingMany = useSelector(state => state.classroom.copyManyLoading)
+  const [copyingClassId, setCopyingClassId] = useState(null)
+  const [copyingMany, setCopyingMany] = useState(false)
   const exportingClassId = useSelector(state => state.classroom.exportingClassId)
   const restoredState = location.state?.classListState
   const restoredQuery = restoredState?.query
@@ -208,53 +208,45 @@ const ClassList = () => {
     })
   }
 
-  const handleCopyOne = record => {
+  const handleCopyOne = async record => {
     if (copyingClassId !== null) return
-    dispatch(copyClass(record.id, response => {
-      const created = normalizeClassCopyResponse(response)
-      const createdId = Number(created?.id)
-      if (!Number.isSafeInteger(createdId) || createdId <= 0) {
-        throw new Error('Không nhận được ID của bản sao')
-      }
-      rememberCopiedClassId(createdId)
-      message.success('Sao chép lớp thành công')
-      history.push(`/app/class/edit/${createdId}`, {
+    setCopyingClassId(record.id)
+    try {
+      const response = await ClassService.copyPreview([record.id])
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy lớp để sao chép')
+      history.push('/app/class/copy-preview', {
         classListState: getClassListState(),
-        copiedClass: created,
+        preview,
       })
-    }, error => message.error(getErrorMessage(error))))
+    } catch (error) {
+      message.error(getErrorMessage(error))
+    } finally {
+      setCopyingClassId(null)
+    }
   }
 
-  const executeMassCopy = () => new Promise((resolve, reject) => {
-    dispatch(copyManyClasses(selectedRowKeys, response => {
-      const result = normalizeMassClassCopyResponse(response)
-      saveClassCopyResult(result)
-      const listState = {
-        ...getClassListState(),
-        selectedRowKeys: [],
-        selectedRecordsById: {},
-      }
-      updateSelection([])
-      history.push('/app/class/copy-result', {
-        copyResult: result,
-        classListState: listState,
+  const executeMassCopy = async () => {
+    if (!selectedRowKeys.length || copyingMany) return
+    setCopyingMany(true)
+    try {
+      const response = await ClassService.copyPreview(selectedRowKeys)
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy lớp để sao chép')
+      history.push('/app/class/copy-preview', {
+        preview,
+        classListState: getClassListState(),
       })
-      resolve()
-    }, error => {
+    } catch (error) {
       message.error(getErrorMessage(error))
-      reject(error)
-    }))
-  })
+    } finally {
+      setCopyingMany(false)
+    }
+  }
 
   const confirmMassCopy = () => {
     if (!selectedRowKeys.length || copyingMany) return
-    Modal.confirm({
-      title: 'Xác nhận sao chép lớp',
-      content: `Sao chép ${selectedRowKeys.length} lớp đã chọn?`,
-      okText: 'Sao chép',
-      cancelText: 'Hủy',
-      onOk: executeMassCopy,
-    })
+    executeMassCopy()
   }
 
   const handleExportOne = (record, type) => {

@@ -215,6 +215,52 @@ const massCopy = createMassCopyHandler({
   },
 });
 
+// Preview is intentionally read-only. The browser receives no password or internal fields.
+const copyPreview = asyncHandler(async (req, res) => {
+  try {
+    const data = await studentService.getCopyPreview(validator.parseMassCopyIdList(req.body.idlist));
+    return successResponse(res, data, `Đã tạo ${data.drafts.length} draft sinh viên`);
+  } catch (error) {
+    if (sendExpectedError(res, error)) return undefined;
+    error.fallbackCode = 'H600';
+    throw error;
+  }
+});
+
+const copyCommit = asyncHandler(async (req, res) => {
+  const uploadedUrls = [];
+  try {
+    const activeMask = await studentService.getActiveHobbyMask();
+    const rawDrafts = typeof req.body.drafts === 'string' ? JSON.parse(req.body.drafts) : req.body.drafts;
+    const drafts = validator.parseCopyDrafts(rawDrafts, activeMask);
+    const attachmentUrls = new Map();
+    for (const file of req.files || []) {
+      const draftKey = file.fieldname.replace(/^attachment-/, '');
+      const draft = drafts.find(item => item.draftKey === draftKey);
+      if (!draft || attachmentUrls.has(draftKey)) {
+        const invalidAttachment = new Error('Ảnh draft không hợp lệ');
+        invalidAttachment.statusCode = 400;
+        invalidAttachment.errorCode = errors.copy.invalidIdList.errorCode;
+        throw invalidAttachment;
+      }
+      const url = await fileService.prepareCreateAttachment(file, draft.values.code, storage);
+      attachmentUrls.set(draftKey, url);
+      uploadedUrls.push(url);
+    }
+    const data = await studentService.commitCopyDrafts(drafts, attachmentUrls);
+    return successResponse(res, data, `Đã tạo ${data.created.length} sinh viên`);
+  } catch (error) {
+    await Promise.all(uploadedUrls.map(url => fileService.cleanupNewAttachment(url, storage)));
+    if (sendExpectedError(res, error)) return undefined;
+    if (error.code === 'COPY_DUPLICATE') return sendError(res, errors.copy.invalidIdList, error.message);
+    if (error.code === 'COPY_SOURCE_NOT_FOUND') return sendError(res, errors.copy.notFound, error.message);
+    if (error.code === '23505') return sendError(res, errors.copy.invalidIdList, errors.uniqueMessageForConstraint(error.constraint));
+    if (error.code === '23503') return sendError(res, errors.copy.invalidIdList, 'class_id không tồn tại');
+    error.fallbackCode = 'H600';
+    throw error;
+  }
+});
+
 // POST /student/import
 const importStudents = asyncHandler(async (req, res) => {
   try {
@@ -312,6 +358,8 @@ module.exports = {
   permanentlyDelete,
   copyOne,
   massCopy,
+  copyPreview,
+  copyCommit,
   importStudents,
   exportOne,
   massExport,

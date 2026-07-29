@@ -431,6 +431,71 @@ const copyOneWithClient = async (client, id) => {
  */
 const massCopy = (idlist) => runMassCopyTransaction(pool, copyOneWithClient, idlist);
 
+const getCopyPreview = async (idlist) => {
+  const reservedCodes = new Set();
+  const drafts = [];
+  const notFoundIds = [];
+  for (const id of idlist) {
+    const result = await pool.query('SELECT code, name, description FROM tra_class WHERE id = $1', [id]);
+    if (!result.rows.length) {
+      notFoundIds.push(id);
+      continue;
+    }
+    const source = result.rows[0];
+    drafts.push({
+      draftKey: `class-${id}`,
+      sourceId: id,
+      values: {
+        code: await generateUniqueValue(pool, 'tra_class', 'code', source.code, 50, reservedCodes),
+        name: source.name,
+        description: source.description || '',
+      },
+    });
+  }
+  return { drafts, notFoundIds };
+};
+
+const commitCopyDrafts = async (drafts) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const codes = drafts.map(draft => draft.values.code);
+    if (new Set(codes).size !== codes.length) {
+      const error = new Error('Mã lớp bị trùng trong các bản sao');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const existing = await client.query('SELECT code FROM tra_class WHERE code = ANY($1)', [codes]);
+    if (existing.rows.length) {
+      const error = new Error('Mã lớp đã tồn tại');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const created = [];
+    for (const draft of drafts) {
+      const source = await client.query('SELECT id FROM tra_class WHERE id = $1 FOR SHARE', [draft.sourceId]);
+      if (!source.rows.length) {
+        const error = new Error(`Không tìm thấy lớp gốc ${draft.sourceId}`);
+        error.code = 'COPY_SOURCE_NOT_FOUND';
+        throw error;
+      }
+      const values = draft.values;
+      const result = await client.query(
+        'INSERT INTO tra_class (code, name, description, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *',
+        [values.code, values.name, values.description || null]
+      );
+      created.push({ draftKey: draft.draftKey, record: result.rows[0] });
+    }
+    await client.query('COMMIT');
+    return { created };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   getAll,
   getByPage,
@@ -446,6 +511,8 @@ module.exports = {
   massDelete,
   copyOne,
   massCopy,
+  getCopyPreview,
+  commitCopyDrafts,
   getManyForExport,
   getOneForExport,
 };

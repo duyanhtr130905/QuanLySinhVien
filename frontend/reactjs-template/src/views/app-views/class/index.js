@@ -6,6 +6,8 @@ import ClassCopyResult from './class-copy/ClassCopyResult'
 import ClassDetail from './class-detail/ClassDetail'
 import ClassImport from './class-import/ClassImport'
 import ClassExport from './class-export/ClassExport'
+import CopyPreviewPage from '../copy-preview/CopyPreviewPage'
+import ClassService from 'services/ClassService'
 
 const ClassManagement = ({ match }) => (
   <Switch>
@@ -14,6 +16,7 @@ const ClassManagement = ({ match }) => (
     <Route path={`${match.url}/edit/:id`} render={() => <ClassForm mode="edit" />} />
     <Route path={`${match.url}/detail/:id`} component={ClassDetail} />
     <Route path={`${match.url}/copy-result`} component={ClassCopyResult} />
+    <Route path={`${match.url}/copy-preview`} render={() => <CopyPreviewPage entity="class" service={ClassService} />} />
     <Route path={`${match.url}/copy/:id`} render={() => <ClassForm mode="copy" />} />
     <Route path={`${match.url}/import`} component={ClassImport} />
     <Route path={`${match.url}/export`} component={ClassExport} />

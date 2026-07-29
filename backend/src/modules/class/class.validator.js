@@ -75,6 +75,22 @@ const validateImportRow = (row) => {
   return { value: { code, name, description } };
 };
 
+const parseCopyDrafts = (value) => {
+  if (!Array.isArray(value) || value.length === 0) fail(errors.massCopy.invalidIdList);
+  const keys = new Set();
+  return value.map((draft, index) => {
+    const sourceId = Number(draft?.sourceId);
+    const draftKey = typeof draft?.draftKey === 'string' ? draft.draftKey.trim() : '';
+    const raw = draft?.values;
+    if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !draftKey || keys.has(draftKey) || !raw || typeof raw !== 'object') {
+      fail({ ...errors.massCopy.invalidIdList, message: `Draft ${index + 1} không hợp lệ` });
+    }
+    keys.add(draftKey);
+    const values = validateStore(raw);
+    return { draftKey, sourceId, values };
+  });
+};
+
 module.exports = {
   parseGetByPage: parseClassPageQuery,
   parseUpdateId: (value) => parseLegacyId(value, errors.update.invalidId),
@@ -83,6 +99,7 @@ module.exports = {
   parseCopyOneId: (value) => parseLegacyId(value, errors.copyOne.invalidId),
   parseMassDeleteIds,
   parseMassCopyIdList,
+  parseCopyDrafts,
   parseClassStudentsId: (value) => parseLegacyId(value, errors.students.invalidId),
   parseClassStudentId: (value) => parseLegacyId(value, errors.students.invalidId),
   parseClassStudentsPageQuery,

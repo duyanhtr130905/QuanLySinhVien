@@ -7,7 +7,7 @@
  * @param {string} originalValue
  * @param {number} maxLen
  */
-const generateUniqueValue = async (client, tableName, columnName, originalValue, maxLen) => {
+const generateUniqueValue = async (client, tableName, columnName, originalValue, maxLen, reservedValues = new Set()) => {
   let suffix = '-copy';
   let counter = 1;
   let candidate;
@@ -27,10 +27,11 @@ const generateUniqueValue = async (client, tableName, columnName, originalValue,
       }
     }
     const result = await client.query(`SELECT 1 FROM ${tableName} WHERE ${columnName} = $1`, [candidate]);
-    if (result.rows.length === 0) break;
+    if (result.rows.length === 0 && !reservedValues.has(candidate)) break;
     counter++;
     suffix = `-copy-${counter}`;
   } while (true);
+  reservedValues.add(candidate);
   return candidate;
 };
 

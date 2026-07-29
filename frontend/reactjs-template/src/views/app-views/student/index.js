@@ -9,6 +9,8 @@ import StudentExport from './student-export/StudentExport';
 import StudentCopy from './student-copy/StudentCopy';
 import StudentCopyResult from './student-copy/StudentCopyResult';
 import StudentDeletedList from './student-deleted-list/StudentDeletedList';
+import CopyPreviewPage from '../copy-preview/CopyPreviewPage';
+import StudentService from 'services/StudentService';
 
 const Student = ({ match }) => {
 	return (
@@ -20,6 +22,7 @@ const Student = ({ match }) => {
 			<Route path={`${match.url}/import`} component={StudentImport} />
 			<Route path={`${match.url}/export`} component={StudentExport} />
 			<Route path={`${match.url}/copy-result`} component={StudentCopyResult} />
+			<Route path={`${match.url}/copy-preview`} render={() => <CopyPreviewPage entity="student" service={StudentService} />} />
 			<Route path={`${match.url}/copy/:id`} component={StudentCopy} />
 			<Route path={`${match.url}/detail/:id`} component={StudentDetail} />
 			<Route path={`${match.url}/list`} component={StudentList} />

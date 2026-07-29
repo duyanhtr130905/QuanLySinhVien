@@ -71,6 +71,22 @@ ClassService.massCopy = function (idlist) {
   })
 }
 
+ClassService.copyPreview = function (idlist) {
+  return fetch({
+    url: '/class/copy/preview',
+    method: 'post',
+    data: { idlist },
+  })
+}
+
+ClassService.commitCopyDrafts = function (drafts) {
+  return fetch({
+    url: '/class/copy/commit',
+    method: 'post',
+    data: { drafts },
+  })
+}
+
 // Kept as an alias for older Class screens while new flows use the explicit name.
 ClassService.copyMany = ClassService.massCopy
 

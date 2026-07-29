@@ -267,6 +267,41 @@ const massCopy = createMassCopyHandler({
   },
 });
 
+const copyPreview = asyncHandler(async (req, res) => {
+  try {
+    const data = await classService.getCopyPreview(validator.parseMassCopyIdList(req.body.idlist));
+    return successResponse(res, data, `Đã tạo ${data.drafts.length} draft lớp`);
+  } catch (error) {
+    if (error.statusCode && error.errorCode) {
+      return errorResponse(res, error.statusCode, error.errorCode, error.message);
+    }
+    error.fallbackCode = 'H600';
+    throw error;
+  }
+});
+
+const copyCommit = asyncHandler(async (req, res) => {
+  try {
+    const data = await classService.commitCopyDrafts(validator.parseCopyDrafts(req.body.drafts));
+    return successResponse(res, data, `Đã tạo ${data.created.length} lớp`);
+  } catch (error) {
+    if (error.statusCode && error.errorCode) {
+      return errorResponse(res, error.statusCode, error.errorCode, error.message);
+    }
+    if (error.code === 'COPY_DUPLICATE') {
+      return errorResponse(res, 409, errors.massCopy.invalidIdList.errorCode, error.message);
+    }
+    if (error.code === 'COPY_SOURCE_NOT_FOUND') {
+      return errorResponse(res, errors.massCopy.notFound.statusCode, errors.massCopy.notFound.errorCode, error.message);
+    }
+    if (error.code === '23505') {
+      return errorResponse(res, 409, errors.store.duplicate.errorCode, errors.store.duplicate.message);
+    }
+    error.fallbackCode = 'H600';
+    throw error;
+  }
+});
+
 module.exports = {
   getAll,
   getByPage,
@@ -281,6 +316,8 @@ module.exports = {
   removeStudent,
   copyOne,
   massCopy,
+  copyPreview,
+  copyCommit,
   importClasses,
   exportOne,
   massExport,

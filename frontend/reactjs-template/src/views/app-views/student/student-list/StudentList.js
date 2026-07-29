@@ -24,10 +24,7 @@ import {
   getPageScopedSelectionChange, getSafeHttpUrl, getStudentRowKey,
   getStudentSortOrder, normalizeStudentRowKeys, toStudentApiIds
 } from '../studentUtils'
-import {
-  getCopyErrorMessage, normalizeMassCopyResponse, rememberCopiedStudentId,
-  saveCopyResultSession, unwrapCopiedStudent
-} from '../student-copy/copyUtils'
+import { getCopyErrorMessage } from '../student-copy/copyUtils'
 
 const { Search } = Input
 const getCount = value => Array.isArray(value) ? value.length : Number(value) || 0
@@ -66,7 +63,6 @@ const StudentList = () => {
   const [columnChooserVisible, setColumnChooserVisible] = useState(false)
   const [copyingStudentId, setCopyingStudentId] = useState(null)
   const [exportingStudentId, setExportingStudentId] = useState(null)
-  const [bulkCopyVisible, setBulkCopyVisible] = useState(false)
   const [copyingMany, setCopyingMany] = useState(false)
 
   const loadStudents = (nextQuery = query) => {
@@ -384,17 +380,12 @@ const StudentList = () => {
     if (copyingStudentId !== null) return
     setCopyingStudentId(id)
     try {
-      const response = await StudentService.copyOne(id)
-      const created = unwrapCopiedStudent(response)
-      const newId = Number(created?.id)
-      if (!Number.isSafeInteger(newId) || newId <= 0) {
-        throw new Error('Không nhận được ID của bản sao.')
-      }
-      rememberCopiedStudentId(newId)
-      message.success('Sao chép sinh viên thành công')
-      history.push(`/app/student/copy/${newId}`, {
+      const response = await StudentService.copyPreview([id])
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy sinh viên để sao chép')
+      history.push('/app/student/copy-preview', {
+        preview,
         studentListState: getStudentListState(),
-        copiedStudent: created,
       })
     } catch (error) {
       message.error(getCopyErrorMessage(error))
@@ -500,26 +491,19 @@ const StudentList = () => {
 
   const handleBulkCopy = () => {
     if (!hasSelection || copyingMany) return
-    setBulkCopyVisible(true)
+    executeBulkCopy()
   }
 
   const executeBulkCopy = async () => {
     if (!hasSelection || copyingMany) return
     setCopyingMany(true)
     try {
-      const response = await StudentService.massCopy(toStudentApiIds(selectedRowKeys))
-      const copyResult = normalizeMassCopyResponse(response)
-      const clearedListState = {
-        ...getStudentListState(),
-        selectedRowKeys: [],
-        selectedRecordsById: {},
-      }
-      saveCopyResultSession(copyResult)
-      updateSelection([])
-      setBulkCopyVisible(false)
-      history.push('/app/student/copy-result', {
-        copyResult,
-        studentListState: clearedListState,
+      const response = await StudentService.copyPreview(toStudentApiIds(selectedRowKeys))
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy sinh viên để sao chép')
+      history.push('/app/student/copy-preview', {
+        preview,
+        studentListState: getStudentListState(),
       })
     } catch (error) {
       message.error(getCopyErrorMessage(error))
@@ -625,19 +609,6 @@ const StudentList = () => {
             />
           </div>
         </Card>
-        <Modal
-          visible={bulkCopyVisible}
-          title="Xác nhận sao chép sinh viên"
-          okText="Sao chép"
-          cancelText="Hủy"
-          confirmLoading={copyingMany}
-          closable={!copyingMany}
-          maskClosable={!copyingMany}
-          onOk={executeBulkCopy}
-          onCancel={() => !copyingMany && setBulkCopyVisible(false)}
-        >
-          Sao chép {selectedRowKeys.length} sinh viên đã chọn?
-        </Modal>
       </div>
   )
 }

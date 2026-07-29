@@ -525,6 +525,104 @@ const copyOne = async (id) => {
  */
 const massCopy = (idlist) => runMassCopyTransaction(pool, copyOneWithClient, idlist);
 
+const COPY_VALUE_COLUMNS = [
+  'code', 'fullname', 'dob', 'sex', 'homecity', 'address', 'hair_color',
+  'email', 'facebook', 'class_id', 'username', 'description', 'hobbies', 'attachment',
+];
+
+const pickCopyValues = source => COPY_VALUE_COLUMNS.reduce((values, key) => ({
+  ...values,
+  [key]: source[key] == null ? null : source[key],
+}), {});
+
+const getCopyPreview = async (idlist) => {
+  const reserved = { code: new Set(), username: new Set(), email: new Set() };
+  const drafts = [];
+  const notFoundIds = [];
+
+  for (const id of idlist) {
+    const result = await pool.query(
+      `SELECT ${DEFAULT_SELECT} FROM tra_student WHERE id = $1 AND deleted_at IS NULL`,
+      [id]
+    );
+    if (!result.rows.length) {
+      notFoundIds.push(id);
+      continue;
+    }
+
+    const values = pickCopyValues(result.rows[0]);
+    values.code = await generateUniqueValue(pool, 'tra_student', 'code', values.code, 50, reserved.code);
+    values.username = await generateUniqueValue(pool, 'tra_student', 'username', values.username, 50, reserved.username);
+    values.email = await generateUniqueValue(pool, 'tra_student', 'email', values.email, 256, reserved.email);
+    drafts.push({ draftKey: `student-${id}`, sourceId: id, values });
+  }
+  return { drafts, notFoundIds };
+};
+
+const assertCopyDraftUnique = async (client, drafts) => {
+  const fields = ['code', 'username', 'email'];
+  for (const field of fields) {
+    const values = drafts.map(draft => draft.values[field]);
+    if (new Set(values).size !== values.length) {
+      const error = new Error(`${field} bị trùng trong các bản sao`);
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+  }
+  const existing = await client.query(
+    'SELECT code, username, email FROM tra_student WHERE code = ANY($1) OR username = ANY($2) OR email = ANY($3)',
+    [drafts.map(draft => draft.values.code), drafts.map(draft => draft.values.username), drafts.map(draft => draft.values.email)]
+  );
+  if (existing.rows.length) {
+    const error = new Error('Code, username hoặc email đã tồn tại');
+    error.code = 'COPY_DUPLICATE';
+    throw error;
+  }
+};
+
+const commitCopyDrafts = async (drafts, attachmentUrls = new Map()) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await assertCopyDraftUnique(client, drafts);
+    const created = [];
+    for (const draft of drafts) {
+      const sourceResult = await client.query(
+        'SELECT password, attachment FROM tra_student WHERE id = $1 AND deleted_at IS NULL FOR SHARE',
+        [draft.sourceId]
+      );
+      if (!sourceResult.rows.length) {
+        const error = new Error(`Không tìm thấy sinh viên gốc ${draft.sourceId}`);
+        error.code = 'COPY_SOURCE_NOT_FOUND';
+        throw error;
+      }
+      const values = draft.values;
+      const source = sourceResult.rows[0];
+      const result = await client.query(`
+        INSERT INTO tra_student
+          (code, fullname, dob, sex, homecity, address, hair_color, email, facebook,
+           class_id, username, password, description, hobbies, attachment, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+        RETURNING ${DEFAULT_SELECT}
+      `, [
+        values.code, values.fullname, values.dob || null, values.sex ?? null,
+        values.homecity || null, values.address || null, values.hair_color || null,
+        values.email, values.facebook || null, values.class_id || null, values.username,
+        source.password, values.description || null, values.hobbies ?? 0,
+        attachmentUrls.get(draft.draftKey) ?? source.attachment ?? null,
+      ]);
+      created.push({ draftKey: draft.draftKey, record: result.rows[0] });
+    }
+    await client.query('COMMIT');
+    return { created };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 
 // ============================================================
 // EXPORT HELPERS
@@ -570,5 +668,5 @@ module.exports = {
   restoreDeleted, permanentlyDelete,
   getActiveHobbyMask,
   uploadAttachment, deleteAttachment, getAttachmentById,
-  copyOne, massCopy, getManyByIds, getOneById,
+  copyOne, massCopy, getCopyPreview, commitCopyDrafts, getManyByIds, getOneById,
 };

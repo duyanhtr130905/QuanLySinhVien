@@ -80,6 +80,22 @@ StudentService.massCopy = function (idlist) {
   })
 }
 
+StudentService.copyPreview = function (idlist) {
+  return fetch({
+    url: '/student/copy/preview',
+    method: 'post',
+    data: { idlist },
+  })
+}
+
+StudentService.commitCopyDrafts = function (drafts) {
+  return fetch({
+    url: '/student/copy/commit',
+    method: 'post',
+    data: drafts instanceof FormData ? drafts : { drafts },
+  })
+}
+
 StudentService.importStudents = function (formData) {
   return fetch({
     url: '/student/import',

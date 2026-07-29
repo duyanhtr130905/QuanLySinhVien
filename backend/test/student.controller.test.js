@@ -364,3 +364,24 @@ test('student.massExport forwards idlist and writes the export response headers'
   assert.equal(res.headers['Content-Disposition'], 'attachment; filename="students-export.csv"');
   assert.equal(res.sent, output);
 });
+
+test('student copy preview is read-only and commit forwards validated drafts', async () => {
+  const previewCalls = [];
+  const commitCalls = [];
+  const controller = controllerFor({
+    getCopyPreview: async (...args) => { previewCalls.push(args); return { drafts: [{ draftKey: 'student-4' }], notFoundIds: [] }; },
+    getActiveHobbyMask: async () => 0,
+    commitCopyDrafts: async (...args) => { commitCalls.push(args); return { created: [{ draftKey: 'student-4', record: { id: 9 } }] }; },
+  });
+  const previewRes = makeRes();
+  await controller.copyPreview(makeReq({ body: { idlist: [4] } }), previewRes, makeNext());
+  assert.deepEqual(previewCalls, [[[4]]]);
+  assert.equal(previewRes.body.data.drafts[0].draftKey, 'student-4');
+
+  const draft = { draftKey: 'student-4', sourceId: 4, values: { ...validStudent, hobbies: 0 } };
+  const commitRes = makeRes();
+  await controller.copyCommit(makeReq({ body: { drafts: [draft] } }), commitRes, makeNext());
+  assert.equal(commitCalls.length, 1);
+  assert.equal(commitCalls[0][0][0].values.password, undefined);
+  assert.equal(commitRes.body.data.created[0].record.id, 9);
+});

@@ -23,3 +23,20 @@ describe('StudentService trash contracts', () => {
     })
   })
 })
+
+describe('StudentService copy preview contracts', () => {
+  beforeEach(() => fetch.mockReset())
+
+  test('uses read-only preview before the explicit commit request', () => {
+    const drafts = [{ draftKey: 'student-1', sourceId: 1, values: { code: 'SV-copy' } }]
+    StudentService.copyPreview([1, 2])
+    StudentService.commitCopyDrafts(drafts)
+    expect(fetch).toHaveBeenNthCalledWith(1, {
+      url: '/student/copy/preview', method: 'post', data: { idlist: [1, 2] },
+    })
+    expect(fetch).toHaveBeenNthCalledWith(2, {
+      url: '/student/copy/commit', method: 'post', data: { drafts },
+    })
+    expect(fetch).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/student/copy', method: 'post' }))
+  })
+})
