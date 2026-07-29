@@ -11,14 +11,11 @@ import ClassService from 'services/ClassService'
 import StudentService from 'services/StudentService'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDateTime,
-  getPageScopedSelectionChange, getStudentSortOrder, unwrapCollection
+  getPageScopedSelectionChange, getStudentRowKey, getStudentSortOrder,
+  normalizeStudentRowKeys, toStudentApiIds, unwrapCollection
 } from '../studentUtils'
 
 const { Search } = Input
-
-const toIds = value => (Array.isArray(value) ? value : [])
-  .map(item => Number(item?.id || item))
-  .filter(id => Number.isSafeInteger(id) && id > 0)
 
 const StudentDeletedList = () => {
   const history = useHistory()
@@ -68,15 +65,18 @@ const StudentDeletedList = () => {
     if (!selectedRowKeys.length || !records.length) return
     setSelectedRecordsById(current => {
       const next = { ...current }
+      const selectedKeySet = new Set(selectedRowKeys)
       records.forEach(record => {
-        if (selectedRowKeys.includes(record.id)) next[record.id] = record
+        const key = getStudentRowKey(record)
+        if (selectedKeySet.has(key)) next[key] = record
       })
       return next
     })
   }, [records, selectedRowKeys])
 
   const updateSelection = (keys, selectedRecords = []) => {
-    const uniqueKeys = [...new Set(toIds(keys))]
+    const uniqueKeys = normalizeStudentRowKeys(keys)
+    const keySet = new Set(uniqueKeys)
     setSelectedRowKeys(uniqueKeys)
     setSelectedRecordsById(current => {
       const next = {}
@@ -84,15 +84,17 @@ const StudentDeletedList = () => {
         if (current[key]) next[key] = current[key]
       })
       selectedRecords.forEach(record => {
-        if (uniqueKeys.includes(record.id)) next[record.id] = record
+        const key = getStudentRowKey(record)
+        if (keySet.has(key)) next[key] = record
       })
       return next
     })
   }
 
   const handleRowSelect = (record, selected) => {
+    const key = getStudentRowKey(record)
     updateSelection(
-      selected ? [...selectedRowKeys, record.id] : selectedRowKeys.filter(key => key !== record.id),
+      selected ? [...selectedRowKeys, key] : selectedRowKeys.filter(item => item !== key),
       selected ? [record] : []
     )
   }
@@ -103,12 +105,13 @@ const StudentDeletedList = () => {
       changeRows,
       selected,
       selectedRowKeys,
+      getRecordKey: getStudentRowKey,
     })
     updateSelection(change.keys, change.records)
   }
 
   const adjustAndReload = async (successfulIds, nextQuery = query) => {
-    const successful = new Set(successfulIds)
+    const successful = new Set(normalizeStudentRowKeys(successfulIds))
     updateSelection(selectedRowKeys.filter(id => !successful.has(id)))
     const nextTotal = Math.max(0, Number(pageInfo.total_items || 0) - successful.size)
     const lastPage = Math.max(1, Math.ceil(nextTotal / nextQuery.size))
@@ -118,14 +121,15 @@ const StudentDeletedList = () => {
   }
 
   const runRestore = async ids => {
-    if (!ids.length || actionLoading) return
+    const apiIds = toStudentApiIds(ids)
+    if (!apiIds.length || actionLoading) return
     setActionLoading('restore')
     try {
-      const response = await StudentService.restoreDeleted(ids)
+      const response = await StudentService.restoreDeleted(apiIds)
       const result = response?.data || response || {}
-      const restored = toIds(result.restored)
-      const conflicts = toIds(result.conflicts)
-      const notFound = toIds(result.notFound)
+      const restored = toStudentApiIds(result.restored)
+      const conflicts = toStudentApiIds(result.conflicts)
+      const notFound = toStudentApiIds(result.notFound)
       if (restored.length) message.success(`Đã khôi phục ${restored.length} sinh viên`)
       if (conflicts.length) message.warning(`${conflicts.length} sinh viên không thể khôi phục vì trùng code/email/username`)
       if (notFound.length) message.warning(`${notFound.length} sinh viên không còn trong thùng rác`)
@@ -138,13 +142,14 @@ const StudentDeletedList = () => {
   }
 
   const runPermanentDelete = async ids => {
-    if (!ids.length || actionLoading) return
+    const apiIds = toStudentApiIds(ids)
+    if (!apiIds.length || actionLoading) return
     setActionLoading('permanent')
     try {
-      const response = await StudentService.permanentlyDelete(ids)
+      const response = await StudentService.permanentlyDelete(apiIds)
       const result = response?.data || response || {}
-      const deleted = toIds(result.deleted)
-      const notFound = toIds(result.notFound)
+      const deleted = toStudentApiIds(result.deleted)
+      const notFound = toStudentApiIds(result.notFound)
       if (deleted.length) message.success(`Đã xóa vĩnh viễn ${deleted.length} sinh viên`)
       if (notFound.length) message.warning(`${notFound.length} sinh viên không còn trong thùng rác`)
       await adjustAndReload(deleted)
@@ -193,7 +198,7 @@ const StudentDeletedList = () => {
   }
 
   const displayedRecords = useMemo(() => buildDisplayedStudentRecords(
-    records, selectedRowKeys, selectedRecordsById
+    records, selectedRowKeys, selectedRecordsById, getStudentRowKey
   ), [records, selectedRowKeys, selectedRecordsById])
   const totalItems = Number(pageInfo.total_items) || 0
   const totalPages = Math.max(1, Number(pageInfo.total_pages) || Math.ceil(totalItems / query.size))
@@ -226,8 +231,8 @@ const StudentDeletedList = () => {
       key: 'action', title: 'Hành động', fixed: 'right', align: 'right', width: 125,
       render: (_, record) => (
         <div onClick={event => event.stopPropagation()}>
-          <Tooltip title="Khôi phục"><Button type="text" icon={<RollbackOutlined />} disabled={isActionLoading} onClick={() => confirmRestore([record.id])} /></Tooltip>
-          <Tooltip title="Xóa vĩnh viễn"><Button type="text" danger icon={<DeleteOutlined />} disabled={isActionLoading} onClick={() => confirmPermanentDelete([record.id])} /></Tooltip>
+          <Tooltip title="Khôi phục"><Button type="text" icon={<RollbackOutlined />} disabled={isActionLoading} onClick={() => confirmRestore([getStudentRowKey(record)])} /></Tooltip>
+          <Tooltip title="Xóa vĩnh viễn"><Button type="text" danger icon={<DeleteOutlined />} disabled={isActionLoading} onClick={() => confirmPermanentDelete([getStudentRowKey(record)])} /></Tooltip>
         </div>
       ),
     },
@@ -265,7 +270,7 @@ const StudentDeletedList = () => {
         <Table
           columns={columns}
           dataSource={displayedRecords}
-          rowKey="id"
+          rowKey={getStudentRowKey}
           loading={loading}
           scroll={{ x: 'max-content' }}
           pagination={false}

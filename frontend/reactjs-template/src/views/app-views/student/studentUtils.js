@@ -76,6 +76,25 @@ export const getSafeHttpUrl = value => {
   }
 }
 
+export const getStudentRowKey = recordOrId => {
+  const value = recordOrId && typeof recordOrId === 'object'
+    ? recordOrId.id
+    : recordOrId
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : ''
+  }
+  if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return ''
+  const id = Number(value.trim())
+  return Number.isSafeInteger(id) && id > 0 ? String(id) : ''
+}
+
+export const normalizeStudentRowKeys = values => {
+  const keys = Array.isArray(values) ? values.map(getStudentRowKey).filter(Boolean) : []
+  return [...new Set(keys)]
+}
+
+export const toStudentApiIds = keys => normalizeStudentRowKeys(keys).map(Number)
+
 export const buildDisplayedStudentRecords = (
   apiRecords,
   selectedRowKeys,

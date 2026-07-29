@@ -21,7 +21,8 @@ import { deleteStudent, fetchStudentList } from 'redux/actions/Student'
 import { decodeHobbyBitmask } from '../student-create/studentFormUtils'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate as formatDate,
-  getPageScopedSelectionChange, getSafeHttpUrl, getStudentSortOrder
+  getPageScopedSelectionChange, getSafeHttpUrl, getStudentRowKey,
+  getStudentSortOrder, normalizeStudentRowKeys, toStudentApiIds
 } from '../studentUtils'
 import {
   getCopyErrorMessage, normalizeMassCopyResponse, rememberCopiedStudentId,
@@ -30,6 +31,11 @@ import {
 
 const { Search } = Input
 const getCount = value => Array.isArray(value) ? value.length : Number(value) || 0
+const normalizeSelectedRecordsById = value => Object.values(value || {}).reduce((records, record) => {
+  const key = getStudentRowKey(record)
+  if (key) records[key] = record
+  return records
+}, {})
 
 const StudentList = () => {
   const dispatch = useDispatch()
@@ -50,15 +56,11 @@ const StudentList = () => {
   const [hobbyMap, setHobbyMap] = useState({})
   const [query, setQuery] = useState(initialQuery)
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => (
-    Array.isArray(restoredListState?.selectedRowKeys)
-      ? [...new Set(restoredListState.selectedRowKeys
-        .map(Number)
-        .filter(id => Number.isSafeInteger(id) && id > 0))]
-      : []
+    normalizeStudentRowKeys(restoredListState?.selectedRowKeys)
   ))
   const [selectedRecordsById, setSelectedRecordsById] = useState(() => (
     restoredListState?.selectedRecordsById && typeof restoredListState.selectedRecordsById === 'object'
-      ? restoredListState.selectedRecordsById
+      ? normalizeSelectedRecordsById(restoredListState.selectedRecordsById)
       : {}
   ))
   const [columnChooserVisible, setColumnChooserVisible] = useState(false)
@@ -111,8 +113,10 @@ const StudentList = () => {
     if (!selectedRowKeys.length || !apiRecords.length) return
     setSelectedRecordsById(current => {
       const next = { ...current }
+      const selectedKeySet = new Set(selectedRowKeys)
       apiRecords.forEach(record => {
-        if (selectedRowKeys.includes(record.id)) next[record.id] = record
+        const key = getStudentRowKey(record)
+        if (selectedKeySet.has(key)) next[key] = record
       })
       return next
     })
@@ -251,7 +255,9 @@ const StudentList = () => {
     .filter(Boolean), [columnOrder, classMap, hobbyMap, query.order]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayedRecords = useMemo(() => {
-    return buildDisplayedStudentRecords(apiRecords, selectedRowKeys, selectedRecordsById)
+    return buildDisplayedStudentRecords(
+      apiRecords, selectedRowKeys, selectedRecordsById, getStudentRowKey
+    )
   }, [apiRecords, selectedRecordsById, selectedRowKeys])
   const totalItems = Number(pageInfo.total_items) || 0
   const totalPages = Math.max(1, Number(pageInfo.total_pages) || Math.ceil(totalItems / query.size))
@@ -310,7 +316,8 @@ const StudentList = () => {
     })
 
   const updateSelection = (keys, records = []) => {
-    const uniqueKeys = Array.from(new Set(keys))
+    const uniqueKeys = normalizeStudentRowKeys(keys)
+    const keySet = new Set(uniqueKeys)
     setSelectedRowKeys(uniqueKeys)
     setSelectedRecordsById(current => {
       const next = {}
@@ -318,16 +325,18 @@ const StudentList = () => {
         if (current[key]) next[key] = current[key]
       })
       records.forEach(record => {
-        if (uniqueKeys.includes(record.id)) next[record.id] = record
+        const key = getStudentRowKey(record)
+        if (keySet.has(key)) next[key] = record
       })
       return next
     })
   }
 
   const handleRowSelect = (record, selected) => {
+    const key = getStudentRowKey(record)
     const keys = selected
-      ? [...selectedRowKeys, record.id]
-      : selectedRowKeys.filter(key => key !== record.id)
+      ? [...selectedRowKeys, key]
+      : selectedRowKeys.filter(item => item !== key)
     updateSelection(keys, selected ? [record] : [])
   }
 
@@ -337,6 +346,7 @@ const StudentList = () => {
       changeRows,
       selected,
       selectedRowKeys,
+      getRecordKey: getStudentRowKey,
     })
     updateSelection(change.keys, change.records)
   }
@@ -456,7 +466,7 @@ const StudentList = () => {
     dispatch(deleteStudent(
       record.id,
       () => {
-        const nextKeys = selectedRowKeys.filter(key => key !== record.id)
+        const nextKeys = selectedRowKeys.filter(key => key !== getStudentRowKey(record))
         const nextTotal = Math.max(0, totalItems - 1)
         const nextLastPage = Math.max(1, Math.ceil(nextTotal / query.size))
         const nextQuery = { ...query, page: Math.min(query.page, nextLastPage) }
@@ -497,7 +507,7 @@ const StudentList = () => {
     if (!hasSelection || copyingMany) return
     setCopyingMany(true)
     try {
-      const response = await StudentService.massCopy(selectedRowKeys)
+      const response = await StudentService.massCopy(toStudentApiIds(selectedRowKeys))
       const copyResult = normalizeMassCopyResponse(response)
       const clearedListState = {
         ...getStudentListState(),
@@ -520,18 +530,19 @@ const StudentList = () => {
 
   const executeBulkDelete = async () => {
     try {
-      const response = await StudentService.massDestroy(selectedRowKeys)
+      const response = await StudentService.massDestroy(toStudentApiIds(selectedRowKeys))
       const result = response?.data || {}
       const notFoundCount = getCount(result.notFound)
       const deletedCount = result.deleted === undefined ? selectedRowKeys.length - notFoundCount : getCount(result.deleted)
-      const deletedIds = Array.isArray(result.deleted)
-        ? result.deleted.map(item => typeof item === 'object' ? item.id : item)
+      const deletedKeys = Array.isArray(result.deleted)
+        ? normalizeStudentRowKeys(result.deleted)
         : deletedCount === selectedRowKeys.length ? selectedRowKeys : []
       if (deletedCount > 0) message.success(`Đã xóa ${deletedCount} sinh viên`)
       if (notFoundCount > 0) message.warning(`${notFoundCount} sinh viên không tìm thấy hoặc không thể xóa`)
       if (deletedCount === 0) message.warning('Không có sinh viên nào được xóa')
-      const remainingKeys = deletedIds.length
-        ? selectedRowKeys.filter(key => !deletedIds.includes(key))
+      const deletedKeySet = new Set(deletedKeys)
+      const remainingKeys = deletedKeys.length
+        ? selectedRowKeys.filter(key => !deletedKeySet.has(key))
         : selectedRowKeys
       updateSelection(remainingKeys)
       loadStudents()
@@ -596,7 +607,7 @@ const StudentList = () => {
           <Table
             columns={tableColumns}
             dataSource={displayedRecords}
-            rowKey="id"
+            rowKey={getStudentRowKey}
             loading={listLoading}
             scroll={{ x: 'max-content' }}
             rowSelection={{ selectedRowKeys, preserveSelectedRowKeys: true, onSelect: handleRowSelect, onSelectAll: handleSelectAll }}
