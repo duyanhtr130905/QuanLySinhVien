@@ -20,8 +20,8 @@ import {
 } from '../../student/studentUtils'
 import {
   buildClassOrder, normalizeMassDeleteResponse,
-  getSelectedClassesWithStudentsCount, isClassDeleteBlockedError,
-  normalizeClassStudentCount, trimClassSearch,
+  getClassBulkDeleteBlockReason, hasClassStudentCountMetadata,
+  isClassDeleteBlockedError, normalizeClassStudentCount, trimClassSearch,
 } from '../classUtils'
 import '../Class.css'
 
@@ -109,7 +109,11 @@ const ClassList = () => {
       const next = { ...current }
       apiRecords.forEach(record => {
         if (selectedRowKeys.includes(record.id)) {
-          next[record.id] = { ...record, student_count: normalizeClassStudentCount(record) }
+          next[record.id] = {
+            ...record,
+            student_count: normalizeClassStudentCount(record),
+            student_count_known: hasClassStudentCountMetadata(record),
+          }
         }
       })
       return next
@@ -262,7 +266,8 @@ const ClassList = () => {
   }
 
   const executeMassDelete = () => new Promise((resolve, reject) => {
-    if (massDeleting) {
+    if (massDeleting || !canMassDelete) {
+      if (!massDeleting) showMassDeleteBlockedMessage()
       resolve()
       return
     }
@@ -292,21 +297,13 @@ const ClassList = () => {
   })
 
   const confirmMassDelete = () => {
-    if (!selectedRowKeys.length || massDeleting) return
-    const selectedWithStudents = getSelectedClassesWithStudentsCount(
-      selectedRowKeys,
-      selectedRecordsById
-    )
+    if (!canMassDelete) {
+      showMassDeleteBlockedMessage()
+      return
+    }
     Modal.confirm({
       title: 'Xác nhận xóa lớp',
-      content: (
-        <div>
-          <p>Bạn có chắc chắn muốn xóa {selectedRowKeys.length} lớp đã chọn không?</p>
-          {selectedWithStudents > 0 && (
-            <p>{selectedWithStudents} lớp đang có sinh viên sẽ không bị xóa.</p>
-          )}
-        </div>
-      ),
+      content: `Bạn có chắc chắn muốn xóa ${selectedRowKeys.length} lớp đã chọn không?`,
       okText: 'Xóa',
       okType: 'danger',
       cancelText: 'Hủy',
@@ -494,6 +491,7 @@ const ClassList = () => {
   const normalizedApiRecords = useMemo(() => apiRecords.map(record => ({
     ...record,
     student_count: normalizeClassStudentCount(record),
+    student_count_known: hasClassStudentCountMetadata(record),
   })), [apiRecords])
   const displayedRecords = buildDisplayedStudentRecords(
     normalizedApiRecords,
@@ -503,6 +501,15 @@ const ClassList = () => {
   const totalItems = Number(pageInfo.total_items) || 0
   const totalPages = Number(pageInfo.total_pages) || 0
   const hasSelection = selectedRowKeys.length > 0
+  const massDeleteBlockReason = getClassBulkDeleteBlockReason(selectedRowKeys, selectedRecordsById)
+  const canMassDelete = hasSelection && !massDeleting && !massDeleteBlockReason
+  const showMassDeleteBlockedMessage = () => {
+    if (massDeleteBlockReason === 'has_students') {
+      message.warning('Không thể xóa hàng loạt vì lựa chọn có lớp vẫn còn sinh viên.')
+    } else if (massDeleteBlockReason === 'missing_metadata') {
+      message.warning('Không thể xóa hàng loạt vì chưa đủ dữ liệu số sinh viên của các lớp đã chọn.')
+    }
+  }
 
   const actionMenu = (
     <Menu>
@@ -533,7 +540,7 @@ const ClassList = () => {
         key="delete"
         danger
         icon={<DeleteOutlined />}
-        disabled={!hasSelection || massDeleting}
+        disabled={!canMassDelete}
         onClick={confirmMassDelete}
       >
         Xóa dữ liệu đã chọn

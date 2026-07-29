@@ -1,6 +1,7 @@
 import {
   buildClassOrder, getChangedClassFields, normalizeMassClassCopyResponse,
-  getSelectedClassesWithStudentsCount, isClassDeleteBlockedError, normalizeClassStudentCount,
+  getClassBulkDeleteBlockReason, getSelectedClassesWithStudentsCount,
+  isClassDeleteBlockedError, normalizeClassStudentCount,
   normalizeMassDeleteResponse, trimClassSearch, validateClassValues,
 } from './classUtils'
 import {
@@ -43,6 +44,21 @@ describe('class list helpers', () => {
       [1, 2, 3],
       { 1: { student_count: '2' }, 2: { student_count: 0 }, 3: { student_count: '1' } }
     )).toBe(2)
+  })
+
+  test('blocks bulk deletion when a selected class has students or lacks count metadata', () => {
+    expect(getClassBulkDeleteBlockReason(
+      [1, 2],
+      { 1: { student_count: 0 }, 2: { student_count: '0' } }
+    )).toBeNull()
+    expect(getClassBulkDeleteBlockReason(
+      [1, 2],
+      { 1: { student_count: 0 }, 2: { student_count: 1 } }
+    )).toBe('has_students')
+    expect(getClassBulkDeleteBlockReason(
+      [1, 2],
+      { 1: { student_count: 0 } }
+    )).toBe('missing_metadata')
   })
 
   test('recognizes a class delete conflict from the legacy code or HTTP status', () => {
