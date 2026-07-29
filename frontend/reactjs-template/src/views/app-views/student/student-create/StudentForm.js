@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Link, useHistory, useLocation, useParams } from 'react-router-dom'
 import {
-  Breadcrumb, Button, Card, Col, DatePicker, Form, Input, message, Modal,
+  Alert, Breadcrumb, Button, Card, Col, DatePicker, Form, Input, message, Modal,
   Radio, Result, Row, Select, Skeleton, Spin, Tooltip, Upload
 } from 'antd'
 import {
@@ -24,6 +24,9 @@ import {
 } from '../studentUtils'
 import { hasStoredCopyReference } from '../student-copy/copyUtils'
 import { normalizeClassFormValues } from '../../class/classUtils'
+import {
+  clearStudentCreateDraft, loadStudentCreateDraft, saveStudentCreateDraft,
+} from './studentDraftStorage'
 import './StudentCreate.css'
 
 const { Option } = Select
@@ -89,6 +92,7 @@ const normalizeValues = (values, allowedHobbyBits) => ({
 })
 
 const StudentForm = ({ mode = 'create' }) => {
+  const isCreate = mode === 'create'
   const isEdit = mode === 'edit'
   const isCopy = mode === 'copy'
   const isRecordEdit = isEdit || isCopy
@@ -137,18 +141,20 @@ const StudentForm = ({ mode = 'create' }) => {
   const postSaveRoute = isCopy && location.state?.copyResultReturn
     ? copyResultRoute
     : detailRoute
-  const cancelRoute = isEdit
+  const cancelRoute = isCreate || isEdit || !validRouteId
     ? listRoute
     : (isCopy && location.state?.copyResultReturn ? copyResultRoute : detailRoute)
   const codeInputRef = useRef(null)
   const previewUrlRef = useRef('')
   const initializedIdRef = useRef(null)
   const initialSnapshotRef = useRef(null)
+  const createDraftLoadedRef = useRef(false)
 
   const [classes, setClasses] = useState([])
   const [hobbyOptions, setHobbyOptions] = useState([])
   const [loadingClasses, setLoadingClasses] = useState(false)
   const [loadingHobbies, setLoadingHobbies] = useState(false)
+  const [classesLoaded, setClassesLoaded] = useState(false)
   const [hobbiesLoaded, setHobbiesLoaded] = useState(false)
   const [classLoadError, setClassLoadError] = useState(false)
   const [hobbyLoadError, setHobbyLoadError] = useState(false)
@@ -165,6 +171,9 @@ const StudentForm = ({ mode = 'create' }) => {
   const [creatingHobby, setCreatingHobby] = useState(false)
   const [classModalVisible, setClassModalVisible] = useState(false)
   const [creatingClass, setCreatingClass] = useState(false)
+  const [pendingCreateDraft, setPendingCreateDraft] = useState(null)
+  const [draftRestored, setDraftRestored] = useState(false)
+  const [createCancelVisible, setCreateCancelVisible] = useState(false)
 
   const replacePreviewUrl = nextUrl => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
@@ -181,6 +190,7 @@ const StudentForm = ({ mode = 'create' }) => {
 
   const loadClasses = () => {
     setLoadingClasses(true)
+    setClassesLoaded(false)
     setClassLoadError(false)
     ClassService.getAll()
       .then(response => setClasses(sortClasses(unwrapCollection(response))))
@@ -189,7 +199,10 @@ const StudentForm = ({ mode = 'create' }) => {
         setClassLoadError(true)
         message.error('Không tải được danh sách lớp')
       })
-      .finally(() => setLoadingClasses(false))
+      .finally(() => {
+        setLoadingClasses(false)
+        setClassesLoaded(true)
+      })
   }
 
   const loadHobbies = () => {
@@ -279,6 +292,34 @@ const StudentForm = ({ mode = 'create' }) => {
     initializedIdRef.current = numericId
     setDirty(false)
   }, [form, formDetail, hobbiesLoaded, hobbyOptions, isRecordEdit, numericId, validId])
+
+  useEffect(() => {
+    if (!isCreate || createDraftLoadedRef.current) return
+    createDraftLoadedRef.current = true
+    const draft = loadStudentCreateDraft()
+    if (draft) setPendingCreateDraft(draft)
+  }, [isCreate])
+
+  useEffect(() => {
+    if (!isCreate || !pendingCreateDraft || !classesLoaded || !hobbiesLoaded) return
+    const selectedHobbies = pendingCreateDraft.values.hobbies.filter(bit => (
+      hobbyOptions.some(option => Number(option.bit_value) === bit)
+    ))
+    const restoredValues = {
+      ...pendingCreateDraft.values,
+      dob: pendingCreateDraft.values.dob
+        ? moment(pendingCreateDraft.values.dob, 'YYYY-MM-DD', true)
+        : null,
+      hobbies: selectedHobbies,
+      password: '',
+    }
+    form.setFieldsValue(restoredValues)
+    setSelectedHobbyBits(selectedHobbies)
+    setHairColor(restoredValues.hair_color || '')
+    setDraftRestored(pendingCreateDraft)
+    setDirty(true)
+    setPendingCreateDraft(null)
+  }, [classesLoaded, form, hobbiesLoaded, hobbyOptions, isCreate, pendingCreateDraft])
 
   const handleAttachment = file => {
     const extension = file.name.split('.').pop().toLowerCase()
@@ -576,6 +617,8 @@ const StudentForm = ({ mode = 'create' }) => {
         dispatch(createStudent(
           formData,
           () => {
+            clearStudentCreateDraft()
+            setDraftRestored(false)
             message.success('Thêm mới sinh viên thành công')
             if (continueAfterCreate) {
               prepareForNextStudent()
@@ -599,13 +642,43 @@ const StudentForm = ({ mode = 'create' }) => {
 
   const leavePage = () => {
     clearAttachment()
-    history.push(cancelRoute)
+    history.push(isCreate ? listRoute : cancelRoute)
+  }
+
+  const resetCreateForm = () => {
+    form.resetFields()
+    clearAttachment()
+    setSelectedHobbyBits([])
+    setHairColor('#000000')
+    setDraftRestored(false)
+    setDirty(false)
+  }
+
+  const saveDraftAndLeave = () => {
+    if (!saveStudentCreateDraft(form.getFieldsValue(), { hasAttachment: Boolean(attachment) })) {
+      message.error('Không thể lưu bản nháp trên thiết bị này.')
+      return
+    }
+    setCreateCancelVisible(false)
+    leavePage()
+  }
+
+  const discardDraftAndLeave = () => {
+    clearStudentCreateDraft()
+    resetCreateForm()
+    setCreateCancelVisible(false)
+    history.push(listRoute)
   }
 
   const handleCancel = () => {
     if (submitting) return
     if (!dirty) {
       leavePage()
+      return
+    }
+
+    if (isCreate) {
+      setCreateCancelVisible(true)
       return
     }
 
@@ -730,6 +803,18 @@ const StudentForm = ({ mode = 'create' }) => {
       )}
 
       {loadState || <Card className="student-create-card">
+        {isCreate && draftRestored && (
+          <Alert
+            className="mb-3"
+            type="info"
+            showIcon
+            closable
+            message="Đã khôi phục bản nháp chưa hoàn thành"
+            description={draftRestored.hadAttachment
+              ? 'Ảnh không được lưu trong bản nháp. Vui lòng chọn lại ảnh nếu cần.'
+              : undefined}
+          />
+        )}
         <Form
           form={form}
           layout="vertical"
@@ -1032,6 +1117,26 @@ const StudentForm = ({ mode = 'create' }) => {
         </Form>
         </Card>}
       </div>
+
+      <Modal
+        visible={createCancelVisible}
+        title="Hủy thêm mới sinh viên?"
+        footer={[
+          <Button key="continue" onClick={() => setCreateCancelVisible(false)}>
+            Tiếp tục chỉnh sửa
+          </Button>,
+          <Button key="discard" danger onClick={discardDraftAndLeave}>
+            Không lưu và thoát
+          </Button>,
+          <Button key="save-draft" type="primary" onClick={saveDraftAndLeave}>
+            Lưu bản nháp và thoát
+          </Button>,
+        ]}
+        onCancel={() => setCreateCancelVisible(false)}
+        destroyOnClose
+      >
+        Các thay đổi chưa hoàn thành. Bạn muốn xử lý bản nháp này như thế nào?
+      </Modal>
 
       <Modal
         visible={hobbyModalVisible}
