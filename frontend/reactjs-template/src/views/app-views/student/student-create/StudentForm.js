@@ -1121,17 +1121,19 @@ const StudentForm = ({ mode = 'create' }) => {
       <Modal
         visible={createCancelVisible}
         title="Hủy thêm mới sinh viên?"
-        footer={[
-          <Button key="continue" onClick={() => setCreateCancelVisible(false)}>
-            Tiếp tục chỉnh sửa
-          </Button>,
-          <Button key="discard" danger onClick={discardDraftAndLeave}>
-            Không lưu và thoát
-          </Button>,
-          <Button key="save-draft" type="primary" onClick={saveDraftAndLeave}>
-            Lưu bản nháp và thoát
-          </Button>,
-        ]}
+        footer={(
+          <div className="student-create-cancel-actions">
+            <Button onClick={() => setCreateCancelVisible(false)}>
+              Tiếp tục chỉnh sửa
+            </Button>
+            <Button danger onClick={discardDraftAndLeave}>
+              Không lưu và thoát
+            </Button>
+            <Button className="student-create-save-draft" type="primary" onClick={saveDraftAndLeave}>
+              Lưu bản nháp và thoát
+            </Button>
+          </div>
+        )}
         onCancel={() => setCreateCancelVisible(false)}
         destroyOnClose
       >
