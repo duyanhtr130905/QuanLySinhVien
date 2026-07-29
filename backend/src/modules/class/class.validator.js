@@ -50,10 +50,12 @@ const isValidExportType = (value) => ['csv', 'xlsx', 'json', 'xml'].includes(val
 
 const validateStore = (body) => {
   const { code, name, description } = body;
-  if (!code || !name) fail(errors.store.required);
-  if (code.length > 50) fail(errors.store.codeTooLong);
-  if (name.length > 255) fail(errors.store.nameTooLong);
-  return { code, name, description };
+  const normalizedCode = typeof code === 'string' ? code.trim() : code;
+  const normalizedName = typeof name === 'string' ? name.trim() : name;
+  if (!normalizedCode || !normalizedName) fail(errors.store.required);
+  if (normalizedCode.length > 50) fail(errors.store.codeTooLong);
+  if (normalizedName.length > 255) fail(errors.store.nameTooLong);
+  return { code: normalizedCode, name: normalizedName, description };
 };
 
 const validateUpdate = (body) => {

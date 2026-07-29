@@ -178,7 +178,7 @@ export function* copyClassSaga() {
       if (onSuccess) onSuccess(data)
     } catch (error) {
       const payload = getErrorPayload(error)
-      const message = payload?.message || 'KhÃ´ng thá»ƒ sao chÃ©p lá»›p.'
+      const message = payload?.message || 'Không thể sao chép lớp.'
       yield put(copyClassFail(message))
       if (onError) onError(payload || { message })
     }
@@ -194,7 +194,7 @@ export function* copyManyClassesSaga() {
       if (onSuccess) onSuccess(data)
     } catch (error) {
       const payload = getErrorPayload(error)
-      const message = payload?.message || 'KhÃ´ng thá»ƒ sao chÃ©p cÃ¡c lá»›p Ä‘Ã£ chá»n.'
+      const message = payload?.message || 'Không thể sao chép các lớp đã chọn.'
       yield put(copyManyClassesFail(message))
       if (onError) onError(payload || { message })
     }
@@ -210,7 +210,7 @@ export function* importClassesSaga() {
       if (onSuccess) onSuccess(data)
     } catch (error) {
       const payload = getErrorPayload(error)
-      const message = payload?.message || 'KhÃ´ng thá»ƒ import dá»¯ liá»‡u Lá»›p.'
+      const message = payload?.message || 'Không thể import dữ liệu Lớp.'
       yield put(importClassesFail(message))
       if (onError) onError(payload || { message })
     }
@@ -224,13 +224,13 @@ export function* exportClassSaga() {
     try {
       const response = yield call(ClassService.exportOne, id, exportType)
       const blob = getExportBlob(response)
-      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('File export rá»—ng')
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('File export rỗng')
       const filename = getDownloadFilename(response?.headers?.['content-disposition'], fallbackFilename)
       yield call(downloadBlob, blob, filename)
       yield put(exportClassSuccess(id))
       if (onSuccess) onSuccess()
     } catch (error) {
-      const message = yield call(getBlobErrorMessage, error, 'KhÃ´ng thá»ƒ export Lá»›p. Vui lÃ²ng thá»­ láº¡i.')
+      const message = yield call(getBlobErrorMessage, error, 'Không thể export Lớp. Vui lòng thử lại.')
       yield put(exportClassFail(message))
       if (onError) onError({ message })
     }
@@ -242,13 +242,13 @@ export function* exportManyClassesSaga() {
     try {
       const response = yield call(ClassService.exportMany, idlist, exportType)
       const blob = getExportBlob(response)
-      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('File export rá»—ng')
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('File export rỗng')
       const filename = getDownloadFilename(response?.headers?.['content-disposition'], fallbackFilename)
       yield call(downloadBlob, blob, filename)
       yield put(exportManyClassesSuccess())
       if (onSuccess) onSuccess()
     } catch (error) {
-      const message = yield call(getBlobErrorMessage, error, 'KhÃ´ng thá»ƒ export cÃ¡c Lá»›p Ä‘Ã£ chá»n. Vui lÃ²ng thá»­ láº¡i.')
+      const message = yield call(getBlobErrorMessage, error, 'Không thể export các Lớp đã chọn. Vui lòng thử lại.')
       yield put(exportManyClassesFail(message))
       if (onError) onError({ message })
     }

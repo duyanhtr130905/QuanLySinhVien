@@ -60,13 +60,15 @@ test('class id list validators only retain the existing array/non-empty validati
   expectError(() => validator.parseMassCopyIdList('1,2'), errors.massCopy.invalidIdList);
 });
 
-test('class store validation keeps required and maximum-length behavior without mutating body', () => {
-  const body = { code: 'C01', name: 'Lớp 1', description: 'Mô tả' };
-  assert.deepEqual(validator.validateStore(body), body);
-  assert.deepEqual(body, { code: 'C01', name: 'Lớp 1', description: 'Mô tả' });
+test('class store validation normalizes code and name before required and maximum-length checks', () => {
+  const body = { code: '  C01  ', name: '  Lớp 01  ', description: 'Mô tả' };
+  assert.deepEqual(validator.validateStore(body), { code: 'C01', name: 'Lớp 01', description: 'Mô tả' });
+  assert.deepEqual(body, { code: '  C01  ', name: '  Lớp 01  ', description: 'Mô tả' });
   expectError(() => validator.validateStore({ code: '', name: 'Lớp' }), errors.store.required);
-  expectError(() => validator.validateStore({ code: 'x'.repeat(51), name: 'Lớp' }), errors.store.codeTooLong);
-  expectError(() => validator.validateStore({ code: 'C01', name: 'x'.repeat(256) }), errors.store.nameTooLong);
+  expectError(() => validator.validateStore({ code: '   ', name: 'Lớp' }), errors.store.required);
+  expectError(() => validator.validateStore({ code: 'C01', name: '   ' }), errors.store.required);
+  expectError(() => validator.validateStore({ code: ` ${'x'.repeat(51)} `, name: 'Lớp' }), errors.store.codeTooLong);
+  expectError(() => validator.validateStore({ code: 'C01', name: ` ${'x'.repeat(256)} ` }), errors.store.nameTooLong);
 });
 
 test('class update validation permits partial mutable fields and ignores code', () => {
