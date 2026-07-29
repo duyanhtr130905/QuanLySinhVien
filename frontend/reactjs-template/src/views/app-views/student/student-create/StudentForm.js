@@ -23,6 +23,7 @@ import {
   normalizeStudentSex as normalizeSex, unwrapCollection
 } from '../studentUtils'
 import { hasStoredCopyReference } from '../student-copy/copyUtils'
+import { normalizeClassFormValues } from '../../class/classUtils'
 import './StudentCreate.css'
 
 const { Option } = Select
@@ -50,6 +51,10 @@ const getClassOptionLabel = item => {
   if (item.code && name) return `${item.code} - ${name}`
   return name || item.code || String(item.id)
 }
+
+const sortClasses = values => [...values].sort((left, right) => (
+  getClassOptionLabel(left).localeCompare(getClassOptionLabel(right), 'vi')
+))
 
 const getErrorText = value => {
   if (Array.isArray(value)) return value.map(getErrorText).filter(Boolean).join(', ')
@@ -93,6 +98,7 @@ const StudentForm = ({ mode = 'create' }) => {
   const location = useLocation()
   const [form] = Form.useForm()
   const [hobbyForm] = Form.useForm()
+  const [classForm] = Form.useForm()
   const submitting = useSelector(state => (
     isRecordEdit ? state.student.updateLoading : state.student.createLoading
   ))
@@ -128,9 +134,12 @@ const StudentForm = ({ mode = 'create' }) => {
       ? { studentListState: location.state.studentListState }
       : undefined,
   }
-  const postEditRoute = isCopy && location.state?.copyResultReturn
+  const postSaveRoute = isCopy && location.state?.copyResultReturn
     ? copyResultRoute
     : detailRoute
+  const cancelRoute = isEdit
+    ? listRoute
+    : (isCopy && location.state?.copyResultReturn ? copyResultRoute : detailRoute)
   const codeInputRef = useRef(null)
   const previewUrlRef = useRef('')
   const initializedIdRef = useRef(null)
@@ -154,6 +163,8 @@ const StudentForm = ({ mode = 'create' }) => {
   const [submitMode, setSubmitMode] = useState(null)
   const [hobbyModalVisible, setHobbyModalVisible] = useState(false)
   const [creatingHobby, setCreatingHobby] = useState(false)
+  const [classModalVisible, setClassModalVisible] = useState(false)
+  const [creatingClass, setCreatingClass] = useState(false)
 
   const replacePreviewUrl = nextUrl => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
@@ -172,7 +183,7 @@ const StudentForm = ({ mode = 'create' }) => {
     setLoadingClasses(true)
     setClassLoadError(false)
     ClassService.getAll()
-      .then(response => setClasses(unwrapCollection(response)))
+      .then(response => setClasses(sortClasses(unwrapCollection(response))))
       .catch(() => {
         setClasses([])
         setClassLoadError(true)
@@ -312,6 +323,58 @@ const StudentForm = ({ mode = 'create' }) => {
     if (creatingHobby) return
     setHobbyModalVisible(false)
     hobbyForm.resetFields()
+  }
+
+  const closeClassModal = () => {
+    if (creatingClass) return
+    setClassModalVisible(false)
+    classForm.resetFields()
+  }
+
+  const handleCreateClass = () => {
+    if (creatingClass) return
+    setCreatingClass(true)
+    classForm.validateFields()
+      .then(async values => {
+        const normalized = normalizeClassFormValues(values)
+        try {
+          const response = await ClassService.create(normalized)
+          const payload = response?.data || response
+          const id = normalizeClassId(typeof payload === 'object'
+            ? (payload?.id || payload?.data?.id || payload?.class?.id)
+            : payload)
+          if (!id) throw new Error('Không nhận được ID của lớp mới')
+
+          let createdClass = payload
+          if (!payload?.name && !payload?.class_name && !payload?.className) {
+            const detailResponse = await ClassService.getById(id)
+            createdClass = detailResponse?.data || detailResponse
+          }
+          setClasses(current => sortClasses([
+            ...current.filter(item => Number(item.id) !== id),
+            { ...createdClass, id },
+          ]))
+          form.setFieldsValue({ class_id: id })
+          setDirty(true)
+          setClassModalVisible(false)
+          classForm.resetFields()
+          message.success('Thêm lớp thành công')
+        } catch (error) {
+          const errorMessage = error?.response?.data?.message || error?.message || 'Không thể thêm lớp'
+          const errorCode = error?.response?.data?.code || error?.code
+          const normalizedMessage = errorMessage.toLowerCase()
+          if (errorCode === 'E603' || errorCode === 'F603' || /code|mã lớp/.test(normalizedMessage)) {
+            classForm.setFields([{ name: 'code', errors: [errorMessage] }])
+          } else if (/name|tên lớp/.test(normalizedMessage)) {
+            classForm.setFields([{ name: 'name', errors: [errorMessage] }])
+          } else {
+            message.error(errorMessage)
+          }
+        } finally {
+          setCreatingClass(false)
+        }
+      })
+      .catch(() => setCreatingClass(false))
   }
 
   const handleCreateHobby = () => {
@@ -498,7 +561,7 @@ const StudentForm = ({ mode = 'create' }) => {
               message.success(isCopy
                 ? 'Cập nhật bản sao sinh viên thành công'
                 : 'Cập nhật sinh viên thành công')
-              history.push(postEditRoute)
+              history.push(postSaveRoute)
             },
             error => {
               setSubmitMode(null)
@@ -536,9 +599,7 @@ const StudentForm = ({ mode = 'create' }) => {
 
   const leavePage = () => {
     clearAttachment()
-    history.push(isRecordEdit
-      ? (isCopy && location.state?.copyResultReturn ? copyResultRoute : detailRoute)
-      : listRoute)
+    history.push(cancelRoute)
   }
 
   const handleCancel = () => {
@@ -729,6 +790,7 @@ const StudentForm = ({ mode = 'create' }) => {
                 </Radio.Group>
               </Form.Item>
 
+              <div className="student-create-class-row">
               <Form.Item name="class_id" label="Lớp">
                 <Select
                   allowClear
@@ -750,6 +812,18 @@ const StudentForm = ({ mode = 'create' }) => {
                   ))}
                 </Select>
               </Form.Item>
+              <Tooltip title="Thêm lớp mới">
+                <Button
+                  className="student-create-class-add"
+                  type="primary"
+                  ghost
+                  icon={<PlusOutlined />}
+                  disabled={creatingClass}
+                  onClick={() => setClassModalVisible(true)}
+                  aria-label="Thêm lớp mới"
+                />
+              </Tooltip>
+              </div>
 
               <Form.Item
                 name="homecity"
@@ -875,7 +949,7 @@ const StudentForm = ({ mode = 'create' }) => {
                       }}
                     />
                   </Form.Item>
-                  <ColorPicker color={hairColor || '#000000'} colorChange={handleColorChange} />
+                  <ColorPicker placement="bottomRight" color={hairColor || '#000000'} colorChange={handleColorChange} />
                 </div>
               </Form.Item>
 
@@ -986,6 +1060,31 @@ const StudentForm = ({ mode = 'create' }) => {
               placeholder="Nhập tên sở thích"
               onPressEnter={handleCreateHobby}
             />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        visible={classModalVisible}
+        title="Thêm mới lớp"
+        okText="Thêm lớp"
+        cancelText="Hủy bỏ"
+        confirmLoading={creatingClass}
+        maskClosable={!creatingClass}
+        closable={!creatingClass}
+        keyboard={!creatingClass}
+        onOk={handleCreateClass}
+        onCancel={closeClassModal}
+        destroyOnClose
+      >
+        <Form form={classForm} layout="vertical">
+          <Form.Item name="code" label="Mã lớp" rules={[requiredTrimmedRule('mã lớp', 50)]}>
+            <Input maxLength={50} autoFocus placeholder="Nhập mã lớp" onPressEnter={handleCreateClass} />
+          </Form.Item>
+          <Form.Item name="name" label="Tên lớp" rules={[requiredTrimmedRule('tên lớp', 255)]}>
+            <Input maxLength={255} placeholder="Nhập tên lớp" onPressEnter={handleCreateClass} />
+          </Form.Item>
+          <Form.Item name="description" label="Mô tả">
+            <TextArea rows={4} placeholder="Nhập mô tả lớp (không bắt buộc)" />
           </Form.Item>
         </Form>
       </Modal>

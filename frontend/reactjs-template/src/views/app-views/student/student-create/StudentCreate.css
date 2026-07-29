@@ -53,6 +53,26 @@
   gap: 8px;
 }
 
+.student-create-class-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.student-create-class-row > .ant-form-item {
+  flex: 1;
+}
+
+.student-create-class-add {
+  flex: 0 0 auto;
+  margin-top: 30px;
+}
+
+.color-picker-popover .ant-popover-inner-content {
+  max-width: calc(100vw - 32px);
+  overflow-x: auto;
+}
+
 .student-create-hobby-row > .ant-form-item {
   flex: 1;
 }
@@ -123,6 +143,10 @@
   }
 
   .student-create-hobby-add {
+    margin-top: 30px;
+  }
+
+  .student-create-class-add {
     margin-top: 30px;
   }
 }

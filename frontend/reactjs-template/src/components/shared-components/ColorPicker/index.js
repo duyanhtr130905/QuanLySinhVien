@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types'
 import { SketchPicker } from 'react-color';
+import { Popover } from 'antd'
 
 const ColorPicker = props => {
 
-	const { colorChange, color='' } = props
+	const { colorChange, color='', placement = 'bottomLeft' } = props
 
 	const [visible, setVisible] = useState(false);
 	const [pickerColor, setPickerColor] = useState(color)
@@ -14,10 +15,6 @@ const ColorPicker = props => {
 		setBoxColor(color);
 		setPickerColor(color)
 	}, [color]);
-
-	const onPickerDropdown = () => {
-		setVisible(!visible)
-	}
 
 	const onColorChange = (value) => {
 		const {rgb} = value
@@ -29,24 +26,29 @@ const ColorPicker = props => {
 
 	return (
 		<div className="color-picker">
-			<div className="color-picker-dropdown">
-				<div className="color" style={{backgroundColor: boxColor ? boxColor : '#ffffff'}} onClick={onPickerDropdown} />
-			</div>
-			{
-				visible && (
-					<>
-						<div className="color-picker-backdrop" onClick={onPickerDropdown}/>
-						<SketchPicker color={pickerColor} onChange={onColorChange}/>
-					</>
-				)
-			}
+			<Popover
+				content={<SketchPicker color={pickerColor} onChange={onColorChange}/>}
+				trigger="click"
+				visible={visible}
+				onVisibleChange={setVisible}
+				placement={placement}
+				getPopupContainer={() => document.body}
+				overlayClassName="color-picker-popover"
+				overlayStyle={{ maxWidth: 'calc(100vw - 16px)' }}
+				destroyTooltipOnHide
+			>
+				<div className="color-picker-dropdown">
+					<div className="color" style={{backgroundColor: boxColor ? boxColor : '#ffffff'}} />
+				</div>
+			</Popover>
 		</div>
 	)
 }
 
 ColorPicker.propTypes = {
 	color: PropTypes.string,
-	colorChange: PropTypes.func
+	colorChange: PropTypes.func,
+	placement: PropTypes.oneOf(['bottomLeft', 'bottomRight'])
 }
 
 
