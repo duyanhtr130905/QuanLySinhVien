@@ -15,7 +15,7 @@ import {
 } from 'redux/actions/Class'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate, formatStudentDateTime,
-  formatStudentSex, getPageScopedSelectionChange, getStudentSortOrder,
+  formatStudentSex, getPageScopedSelectionChange, getSelectionAdjustedPagination, getStudentSortOrder,
 } from '../../student/studentUtils'
 import '../Class.css'
 
@@ -202,8 +202,31 @@ const ClassDetail = () => {
     availableApiRecords,
     selectedAvailableStudentIds,
     selectedAvailableStudentsById,
-    record => String(record.id)
-  ), [availableApiRecords, selectedAvailableStudentIds, selectedAvailableStudentsById])
+    record => String(record.id),
+    record => ['code', 'fullname', 'email', 'username', 'description'].some(field => (
+      String(record?.[field] || '').toLocaleLowerCase('vi').includes(availableQuery.search.toLocaleLowerCase('vi'))
+    ))
+  ), [availableApiRecords, availableQuery.search, selectedAvailableStudentIds, selectedAvailableStudentsById])
+  const availablePagination = getSelectionAdjustedPagination({
+    totalItems: availableStudentsPageInfo.total_items,
+    pageSize: availableQuery.size,
+    currentPage: availableQuery.page,
+    selectedRowKeys: selectedAvailableStudentIds,
+    selectedRecordsById: selectedAvailableStudentsById,
+    matchesRecord: record => {
+      const keyword = availableQuery.search.trim().toLocaleLowerCase('vi')
+      return !keyword || ['code', 'fullname', 'email', 'username', 'description'].some(field => (
+        String(record?.[field] || '').toLocaleLowerCase('vi').includes(keyword)
+      ))
+    },
+  })
+
+  useEffect(() => {
+    if (!availableVisible || availableStudentsLoading || Number(availableStudentsPageInfo.current) !== availableQuery.page || availableQuery.page === availablePagination.currentPage) return
+    const nextQuery = { ...availableQuery, page: availablePagination.currentPage }
+    setAvailableQuery(nextQuery)
+    loadAvailableStudents(nextQuery)
+  }, [availablePagination.currentPage, availableQuery, availableStudentsLoading, availableStudentsPageInfo.current, availableVisible]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const submitAvailableStudents = () => {
     if (!selectedAvailableStudentIds.length || addStudentsLoading) return
@@ -415,9 +438,9 @@ const ClassDetail = () => {
         />
         <div className="class-list-pagination">
           <Pagination
-            current={Number(availableStudentsPageInfo.current) || availableQuery.page}
-            pageSize={Number(availableStudentsPageInfo.size) || availableQuery.size}
-            total={Number(availableStudentsPageInfo.total_items) || 0}
+            current={availablePagination.currentPage}
+            pageSize={availableQuery.size}
+            total={availablePagination.totalItems}
             showSizeChanger
             onChange={handleAvailablePageChange}
           />

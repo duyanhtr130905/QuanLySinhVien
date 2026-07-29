@@ -11,8 +11,8 @@ import ClassService from 'services/ClassService'
 import StudentService from 'services/StudentService'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDateTime,
-  getPageScopedSelectionChange, getStudentRowKey, getStudentSortOrder,
-  normalizeStudentRowKeys, toStudentApiIds, unwrapCollection
+  getPageScopedSelectionChange, getSelectionAdjustedPagination, getStudentRowKey,
+  getStudentSortOrder, matchesStudentSearch, normalizeStudentRowKeys, toStudentApiIds, unwrapCollection
 } from '../studentUtils'
 
 const { Search } = Input
@@ -198,12 +198,28 @@ const StudentDeletedList = () => {
   }
 
   const displayedRecords = useMemo(() => buildDisplayedStudentRecords(
-    records, selectedRowKeys, selectedRecordsById, getStudentRowKey
-  ), [records, selectedRowKeys, selectedRecordsById])
-  const totalItems = Number(pageInfo.total_items) || 0
-  const totalPages = Math.max(1, Number(pageInfo.total_pages) || Math.ceil(totalItems / query.size))
+    records, selectedRowKeys, selectedRecordsById, getStudentRowKey,
+    record => matchesStudentSearch(record, query.search)
+  ), [records, query.search, selectedRowKeys, selectedRecordsById])
+  const pagination = getSelectionAdjustedPagination({
+    totalItems: pageInfo.total_items,
+    pageSize: query.size,
+    currentPage: query.page,
+    selectedRowKeys,
+    selectedRecordsById,
+    matchesRecord: record => matchesStudentSearch(record, query.search),
+  })
+  const totalItems = pagination.totalItems
+  const totalPages = pagination.totalPages
   const hasSelection = selectedRowKeys.length > 0
   const isActionLoading = actionLoading !== null
+
+  useEffect(() => {
+    if (loading || Number(pageInfo.current) !== query.page || query.page === pagination.currentPage) return
+    const nextQuery = { ...query, page: pagination.currentPage }
+    setQuery(nextQuery)
+    loadStudents(nextQuery)
+  }, [loading, pageInfo.current, pagination.currentPage, query]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns = [
     {
@@ -278,7 +294,7 @@ const StudentDeletedList = () => {
           rowSelection={{ selectedRowKeys, preserveSelectedRowKeys: true, onSelect: handleRowSelect, onSelectAll: handleSelectAll }}
         />
         <div className="student-list-pagination" style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', padding: 16 }}>
-          <Pagination current={Number(pageInfo.current) || query.page} pageSize={Number(pageInfo.size) || query.size} total={totalItems} showSizeChanger showTotal={() => `Tổng ${totalItems} sinh viên · ${totalPages} trang`} onChange={handlePageChange} />
+          <Pagination current={pagination.currentPage} pageSize={query.size} total={totalItems} showSizeChanger showTotal={() => `Tổng ${totalItems} sinh viên · ${totalPages} trang`} onChange={handlePageChange} />
         </div>
       </Card>
     </div>

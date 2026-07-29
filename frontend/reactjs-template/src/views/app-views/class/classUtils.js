@@ -16,6 +16,14 @@ export const trimClassSearch = value => (
   typeof value === 'string' ? value.trim() : ''
 )
 
+export const matchesClassSearch = (record, search) => {
+  const keyword = trimClassSearch(search).toLocaleLowerCase('vi')
+  if (!keyword) return true
+  return ['code', 'name', 'description'].some(field => (
+    String(record?.[field] || '').toLocaleLowerCase('vi').includes(keyword)
+  ))
+}
+
 export const normalizeClassStudentCount = record => Number(record?.student_count || 0)
 
 export const hasClassStudentCountMetadata = record => {

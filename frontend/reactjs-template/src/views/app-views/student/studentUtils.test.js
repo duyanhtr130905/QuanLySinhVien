@@ -1,7 +1,7 @@
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate, formatStudentSex,
-  getPageScopedSelectionChange, getSafeHttpUrl, getStudentRowKey, getStudentSortOrder,
-  normalizeStudentRowKeys, toStudentApiIds
+  getPageScopedSelectionChange, getSafeHttpUrl, getSelectionAdjustedPagination,
+  getStudentRowKey, getStudentSortOrder, matchesStudentSearch, normalizeStudentRowKeys, toStudentApiIds
 } from './studentUtils'
 
 describe('student sorting', () => {
@@ -125,5 +125,47 @@ describe('student shared helpers', () => {
       selectedRowKeys: selected.keys,
       getRecordKey: getStudentRowKey,
     }).keys).toEqual(['1'])
+  })
+
+  test('adjusts pagination only for selected records matching the active search and clamps pages', () => {
+    const selectedRecordsById = {
+      1: { id: 1, fullname: 'An', email: 'an@example.com' },
+      2: { id: 2, fullname: 'Bình', email: 'binh@example.com' },
+    }
+    expect(getSelectionAdjustedPagination({
+      totalItems: 21,
+      pageSize: 10,
+      currentPage: 3,
+      selectedRowKeys: ['1', '2'],
+      selectedRecordsById,
+      matchesRecord: record => matchesStudentSearch(record, 'an'),
+    })).toEqual({ totalItems: 20, totalPages: 2, currentPage: 2 })
+    expect(getSelectionAdjustedPagination({
+      totalItems: 21,
+      pageSize: 10,
+      currentPage: 2,
+      selectedRowKeys: [],
+      selectedRecordsById,
+      matchesRecord: record => matchesStudentSearch(record, 'an'),
+    })).toEqual({ totalItems: 21, totalPages: 3, currentPage: 2 })
+    expect(getSelectionAdjustedPagination({
+      totalItems: 21,
+      pageSize: 10,
+      currentPage: 2,
+      selectedRowKeys: ['1'],
+      selectedRecordsById,
+      matchesRecord: record => matchesStudentSearch(record, 'not-found'),
+    })).toEqual({ totalItems: 21, totalPages: 3, currentPage: 2 })
+  })
+
+  test('does not pin a selected record outside the active search result', () => {
+    const records = buildDisplayedStudentRecords(
+      [{ id: 2, fullname: 'Bình' }],
+      ['1'],
+      { 1: { id: 1, fullname: 'An' } },
+      getStudentRowKey,
+      record => matchesStudentSearch(record, 'bình')
+    )
+    expect(records.map(record => record.id)).toEqual([2])
   })
 })

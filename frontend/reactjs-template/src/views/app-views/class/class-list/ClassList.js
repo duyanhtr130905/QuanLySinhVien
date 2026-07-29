@@ -16,12 +16,12 @@ import {
   deleteClass, exportClass, fetchClassList, massDeleteClass,
 } from 'redux/actions/Class'
 import {
-  buildDisplayedStudentRecords, getPageScopedSelectionChange,
+  buildDisplayedStudentRecords, getPageScopedSelectionChange, getSelectionAdjustedPagination,
 } from '../../student/studentUtils'
 import {
   buildClassOrder, normalizeMassDeleteResponse,
   getClassBulkDeleteBlockReason, hasClassStudentCountMetadata,
-  isClassDeleteBlockedError, normalizeClassStudentCount, trimClassSearch,
+  isClassDeleteBlockedError, matchesClassSearch, normalizeClassStudentCount, trimClassSearch,
 } from '../classUtils'
 import '../Class.css'
 
@@ -496,10 +496,20 @@ const ClassList = () => {
   const displayedRecords = buildDisplayedStudentRecords(
     normalizedApiRecords,
     selectedRowKeys,
-    selectedRecordsById
+    selectedRecordsById,
+    record => record.id,
+    record => matchesClassSearch(record, query.search)
   )
-  const totalItems = Number(pageInfo.total_items) || 0
-  const totalPages = Number(pageInfo.total_pages) || 0
+  const pagination = getSelectionAdjustedPagination({
+    totalItems: pageInfo.total_items,
+    pageSize: query.size,
+    currentPage: query.page,
+    selectedRowKeys,
+    selectedRecordsById,
+    matchesRecord: record => matchesClassSearch(record, query.search),
+  })
+  const totalItems = pagination.totalItems
+  const totalPages = pagination.totalPages
   const hasSelection = selectedRowKeys.length > 0
   const massDeleteBlockReason = getClassBulkDeleteBlockReason(selectedRowKeys, selectedRecordsById)
   const canMassDelete = hasSelection && !massDeleting && !massDeleteBlockReason
@@ -510,6 +520,13 @@ const ClassList = () => {
       message.warning('Không thể xóa hàng loạt vì chưa đủ dữ liệu số sinh viên của các lớp đã chọn.')
     }
   }
+
+  useEffect(() => {
+    if (listLoading || Number(pageInfo.current) !== query.page || query.page === pagination.currentPage) return
+    const nextQuery = { ...query, page: pagination.currentPage }
+    setQuery(nextQuery)
+    loadClasses(nextQuery)
+  }, [listLoading, pageInfo.current, pagination.currentPage, query]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const actionMenu = (
     <Menu>
@@ -636,8 +653,8 @@ const ClassList = () => {
           />
           <div className="class-list-pagination">
             <Pagination
-              current={Number(pageInfo.current) || query.page}
-              pageSize={Number(pageInfo.size) || query.size}
+              current={pagination.currentPage}
+              pageSize={query.size}
               total={totalItems}
               showSizeChanger
               showTotal={() => `Tổng ${totalItems} lớp · ${totalPages} trang`}

@@ -21,8 +21,8 @@ import { deleteStudent, fetchStudentList } from 'redux/actions/Student'
 import { decodeHobbyBitmask } from '../student-create/studentFormUtils'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate as formatDate,
-  getPageScopedSelectionChange, getSafeHttpUrl, getStudentRowKey,
-  getStudentSortOrder, normalizeStudentRowKeys, toStudentApiIds
+  getPageScopedSelectionChange, getSafeHttpUrl, getSelectionAdjustedPagination,
+  getStudentRowKey, getStudentSortOrder, matchesStudentSearch, normalizeStudentRowKeys, toStudentApiIds
 } from '../studentUtils'
 import { getCopyErrorMessage } from '../student-copy/copyUtils'
 
@@ -252,11 +252,27 @@ const StudentList = () => {
 
   const displayedRecords = useMemo(() => {
     return buildDisplayedStudentRecords(
-      apiRecords, selectedRowKeys, selectedRecordsById, getStudentRowKey
+      apiRecords, selectedRowKeys, selectedRecordsById, getStudentRowKey,
+      record => matchesStudentSearch(record, query.search)
     )
-  }, [apiRecords, selectedRecordsById, selectedRowKeys])
-  const totalItems = Number(pageInfo.total_items) || 0
-  const totalPages = Math.max(1, Number(pageInfo.total_pages) || Math.ceil(totalItems / query.size))
+  }, [apiRecords, query.search, selectedRecordsById, selectedRowKeys])
+  const pagination = getSelectionAdjustedPagination({
+    totalItems: pageInfo.total_items,
+    pageSize: query.size,
+    currentPage: query.page,
+    selectedRowKeys,
+    selectedRecordsById,
+    matchesRecord: record => matchesStudentSearch(record, query.search),
+  })
+  const totalItems = pagination.totalItems
+  const totalPages = pagination.totalPages
+
+  useEffect(() => {
+    if (listLoading || Number(pageInfo.current) !== query.page || query.page === pagination.currentPage) return
+    const nextQuery = { ...query, page: pagination.currentPage }
+    setQuery(nextQuery)
+    loadStudents(nextQuery)
+  }, [listLoading, pageInfo.current, pagination.currentPage, query]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveColumn = (sourceKey, targetKey) => {
     setColumnOrder(currentOrder => {
@@ -600,8 +616,8 @@ const StudentList = () => {
           />
           <div className="student-list-pagination" style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', padding: 16 }}>
             <Pagination
-              current={Number(pageInfo.current) || query.page}
-              pageSize={Number(pageInfo.size) || query.size}
+              current={pagination.currentPage}
+              pageSize={query.size}
               total={totalItems}
               showSizeChanger
               showTotal={() => `Tổng ${totalItems} sinh viên · ${totalPages} trang`}
