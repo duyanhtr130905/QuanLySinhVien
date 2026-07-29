@@ -71,6 +71,19 @@ describe('student shared helpers', () => {
     expect(toStudentApiIds(['1', 2, 'invalid', null, '2'])).toEqual([1, 2])
   })
 
+  test('serializes selected IDs as CSV so pagination exclusions reach the API', () => {
+    expect(buildStudentPageParams(
+      { page: 2, size: 10, search: 'an', order: 'fn:0' },
+      ['1', 2, 'invalid']
+    )).toEqual({
+      page: 2,
+      size: 10,
+      search: 'an',
+      order: 'fn:0',
+      exclude_ids: '1,2',
+    })
+  })
+
   test('keeps string-ID rows visible after one or all rows are selected', () => {
     const apiRecords = [{ id: '1', fullname: 'A' }, { id: '2', fullname: 'B' }]
     const selectedRecordsById = { '1': apiRecords[0], '2': apiRecords[1] }
@@ -177,7 +190,9 @@ describe('student shared helpers', () => {
     }))
     const requestPage = (query, selectedRowKeys) => {
       const params = buildStudentPageParams(query, selectedRowKeys)
-      const excluded = new Set(params.exclude_ids || [])
+      const excluded = new Set(
+        String(params.exclude_ids || '').split(',').filter(Boolean).map(Number)
+      )
       const remaining = allRecords.filter(record => !excluded.has(record.id))
       return {
         params,

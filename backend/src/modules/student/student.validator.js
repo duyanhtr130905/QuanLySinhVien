@@ -65,10 +65,11 @@ const parseStudentPageQuery = (query) => {
     sizeError: errors.getByPage.invalidSize,
     toplistOptions: { legacyParseInt: true, invalid: 'omit' },
   });
-  if (query.exclude_ids === undefined) return parsed;
+  const excludeIds = query.exclude_ids === undefined ? query['exclude_ids[]'] : query.exclude_ids;
+  if (excludeIds === undefined) return parsed;
   return {
     ...parsed,
-    excludeIds: parseToplist(query.exclude_ids, { legacyParseInt: true, invalid: 'omit' }),
+    excludeIds: parseToplist(excludeIds, { legacyParseInt: true, invalid: 'omit' }),
   };
 };
 

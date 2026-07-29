@@ -102,7 +102,8 @@ export const buildStudentPageParams = (query, selectedRowKeys) => {
     size: query.size,
     search: query.search,
     order: query.order || undefined,
-    ...(excludedIds.length ? { exclude_ids: excludedIds } : {}),
+    // CSV avoids Axios' bracket-array serialization and is accepted by parseToplist.
+    ...(excludedIds.length ? { exclude_ids: excludedIds.join(',') } : {}),
   }
 }
 

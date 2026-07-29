@@ -54,6 +54,13 @@ test('student.getByPage parses toplist and excluded IDs before forwarding the se
   assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: 'An', columnlist: undefined, toplist: [2, 5], excludeIds: [1, 3] }]]);
 });
 
+test('student.getByPage accepts legacy bracket-array exclusion parameters', async () => {
+  const calls = [];
+  const controller = controllerFor({ getByPage: async (...args) => { calls.push(args); return { page_info: {}, records: [] }; } });
+  await controller.getByPage(makeReq({ query: { page: '1', size: '10', 'exclude_ids[]': ['4', 'bad', '6x'] } }), makeRes(), makeNext());
+  assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: undefined, columnlist: undefined, toplist: [], excludeIds: [4, 6] }]]);
+});
+
 test('student trash endpoints keep page, restore, permanent-delete, and partial-success contracts', async () => {
   const pageCalls = [];
   const page = controllerFor({ getDeletedByPage: async (...args) => { pageCalls.push(args); return { page_info: { current: 1 }, records: [{ id: 4, deleted_at: '2026-01-01' }] }; } });
