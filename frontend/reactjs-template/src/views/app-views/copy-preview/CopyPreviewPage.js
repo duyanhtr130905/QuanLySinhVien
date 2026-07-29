@@ -1,16 +1,12 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Prompt, useHistory, useLocation } from 'react-router-dom'
-import { Alert, Breadcrumb, Button, Card, Col, Descriptions, Form, Input, Modal, Radio, Result, Row, Tag, Upload } from 'antd'
-import { EditOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons'
+import { Alert, Avatar, Breadcrumb, Button, Card, Col, Descriptions, Form, Input, Modal, Radio, Result, Row, Table, Tag, Tooltip, Upload } from 'antd'
+import { EditOutlined, SaveOutlined, UploadOutlined, UserOutlined } from '@ant-design/icons'
+import ClassService from 'services/ClassService'
+import { formatStudentDate, formatStudentSex, getSafeHttpUrl, unwrapCollection } from '../student/studentUtils'
 
-const { TextArea } = Input
+const { Search, TextArea } = Input
 
-const studentFields = [
-  ['code', 'Mã sinh viên'], ['fullname', 'Họ tên'], ['username', 'Username'], ['email', 'Email'],
-  ['class_id', 'Lớp'], ['hobbies', 'Sở thích'], ['dob', 'Ngày sinh'], ['sex', 'Giới tính'],
-  ['homecity', 'Quê quán'], ['address', 'Địa chỉ'], ['hair_color', 'Màu tóc'],
-  ['facebook', 'Facebook'], ['description', 'Mô tả'], ['attachment', 'Ảnh đính kèm'],
-]
 const classFields = [['code', 'Mã lớp'], ['name', 'Tên lớp'], ['description', 'Mô tả']]
 
 const normalizeDraft = draft => ({
@@ -25,10 +21,12 @@ const CopyPreviewPage = ({ entity, service }) => {
   const listStateKey = entity === 'student' ? 'studentListState' : 'classListState'
   const preview = location.state?.preview
   const [drafts, setDrafts] = useState(() => (Array.isArray(preview?.drafts) ? preview.drafts.map(normalizeDraft) : []))
-  const [editing, setEditing] = useState(null)
+  const [editingDraftKey, setEditingDraftKey] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [completed, setCompleted] = useState(null)
   const [attachmentFiles, setAttachmentFiles] = useState({})
+  const [classLabels, setClassLabels] = useState({})
+  const [search, setSearch] = useState('')
+  const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 10 })
   const [form] = Form.useForm()
   const dirty = Object.keys(attachmentFiles).length > 0 || drafts.some(draft => (
     JSON.stringify(draft.values) !== JSON.stringify(preview?.drafts?.find(item => item.draftKey === draft.draftKey)?.values)
@@ -40,28 +38,47 @@ const CopyPreviewPage = ({ entity, service }) => {
 
   useEffect(() => {
     const warn = event => {
-      if (!dirty || completed) return undefined
+      if (!dirty) return undefined
       event.preventDefault()
       event.returnValue = ''
       return ''
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [completed, dirty])
+  }, [dirty])
+
+  useEffect(() => {
+    if (entity !== 'student') return undefined
+    let active = true
+    const request = ClassService.getAll()
+    if (!request || typeof request.then !== 'function') return () => { active = false }
+    request
+      .then(response => {
+        if (!active) return
+        setClassLabels(unwrapCollection(response).reduce((labels, item) => ({
+          ...labels,
+          [item.id]: item.code && item.name ? `${item.code} - ${item.name}` : (item.name || item.code),
+        }), {}))
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [entity])
 
   const openEditor = draft => {
-    setEditing(draft)
+    setEditingDraftKey(draft.draftKey)
     form.setFieldsValue(draft.values)
   }
+
+  const editingDraft = drafts.find(draft => draft.draftKey === editingDraftKey)
 
   const saveLocalDraft = () => {
     form.validateFields().then(values => {
       setDrafts(current => current.map(draft => (
-        draft.draftKey === editing.draftKey
+        draft.draftKey === editingDraftKey
           ? { ...draft, values: { ...draft.values, ...values } }
           : draft
       )))
-      setEditing(null)
+      setEditingDraftKey(null)
     })
   }
 
@@ -77,8 +94,8 @@ const CopyPreviewPage = ({ entity, service }) => {
           return formData
         })()
         : drafts
-      const response = await service.commitCopyDrafts(payload)
-      setCompleted(response?.data || response)
+      await service.commitCopyDrafts(payload)
+      history.replace(listRoute)
     } catch (error) {
       Modal.error({
         title: 'Không thể lưu bản sao',
@@ -89,9 +106,47 @@ const CopyPreviewPage = ({ entity, service }) => {
     }
   }
 
-  const fields = entity === 'student' ? studentFields : classFields
+  const fields = classFields
   const title = entity === 'student' ? 'Xem trước bản sao Sinh viên' : 'Xem trước bản sao Lớp'
-  const plural = entity === 'student' ? 'sinh viên' : 'lớp'
+  const studentPreviewDrafts = useMemo(() => {
+    const keyword = search.trim().toLocaleLowerCase('vi')
+    if (!keyword) return drafts
+    return drafts.filter(draft => ['code', 'fullname', 'email', 'username'].some(key => (
+      String(draft.values[key] || '').toLocaleLowerCase('vi').includes(keyword)
+    )))
+  }, [drafts, search])
+  const studentColumns = useMemo(() => [
+    {
+      title: 'Ảnh', dataIndex: ['values', 'attachment'], key: 'attachment', width: 76,
+      render: value => <Avatar shape="square" size={32} src={getSafeHttpUrl(value) || undefined} icon={<UserOutlined />} />,
+    },
+    { title: 'Mã sinh viên', dataIndex: ['values', 'code'], key: 'code', width: 150, render: value => value || '-' },
+    { title: 'Họ và tên', dataIndex: ['values', 'fullname'], key: 'fullname', width: 200, render: value => value || '-' },
+    { title: 'Ngày sinh', dataIndex: ['values', 'dob'], key: 'dob', width: 125, render: formatStudentDate },
+    { title: 'Giới tính', dataIndex: ['values', 'sex'], key: 'sex', width: 100, render: formatStudentSex },
+    { title: 'Email', dataIndex: ['values', 'email'], key: 'email', width: 220, render: value => value || '-' },
+    { title: 'Tài khoản', dataIndex: ['values', 'username'], key: 'username', width: 150, render: value => value || '-' },
+    {
+      title: 'Lớp', dataIndex: ['values', 'class_id'], key: 'class_id', width: 180,
+      render: value => value == null || value === '' ? '-' : (classLabels[value] || `Lớp #${value}`),
+    },
+    {
+      title: 'Hành động', key: 'action', fixed: 'right', width: 120, align: 'right',
+      render: (_, draft) => (
+        <Tooltip title="Chỉnh sửa bản sao">
+          <Button
+            type="text"
+            icon={<EditOutlined />}
+            aria-label={`Chỉnh sửa bản sao sinh viên ${draft.values.code || draft.sourceId}`}
+            disabled={saving}
+            onClick={() => openEditor(draft)}
+          >
+            Chỉnh sửa
+          </Button>
+        </Tooltip>
+      ),
+    },
+  ], [classLabels, saving])
 
   if (!preview || !drafts.length) {
     return (
@@ -103,18 +158,6 @@ const CopyPreviewPage = ({ entity, service }) => {
           extra={<Button type="primary" onClick={() => history.push(listRoute)}>Trở về danh sách</Button>}
         />
       </div>
-    )
-  }
-
-  if (completed) {
-    const created = Array.isArray(completed.created) ? completed.created : []
-    return (
-      <Result
-        status="success"
-        title={`Đã lưu ${created.length} bản sao ${plural}`}
-        subTitle="Các thay đổi trong draft đã được ghi nhận."
-        extra={<Button type="primary" onClick={() => history.push(listRoute)}>Trở về danh sách</Button>}
-      />
     )
   }
 
@@ -136,33 +179,64 @@ const CopyPreviewPage = ({ entity, service }) => {
       {Array.isArray(preview.notFoundIds) && preview.notFoundIds.length > 0 && (
         <Alert className="mb-3" type="warning" showIcon message={`Không tìm thấy ID: ${preview.notFoundIds.join(', ')}`} />
       )}
-      <Row gutter={[16, 16]}>
-        {drafts.map(draft => (
-          <Col xs={24} lg={12} key={draft.draftKey}>
-            <Card
-              title={<span>Draft <Tag color="blue">{draft.draftKey}</Tag></span>}
-              extra={<Button icon={<EditOutlined />} onClick={() => openEditor(draft)} disabled={saving}>Chỉnh sửa</Button>}
-            >
-              <Descriptions column={1} size="small">
-                {fields.map(([key, label]) => (
-                  <Descriptions.Item key={key} label={label}>{draft.values[key] || '-'}</Descriptions.Item>
-                ))}
-              </Descriptions>
-              {entity === 'student' && <small>Mật khẩu không được hiển thị và sẽ giữ hash của bản ghi gốc.</small>}
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      {entity === 'student' ? (
+        <Card bodyStyle={{ padding: 0 }}>
+          <div className="p-3">
+            <Search
+              allowClear
+              placeholder="Tìm kiếm bản sao Sinh viên..."
+              value={search}
+              onChange={event => {
+                setSearch(event.target.value)
+                setTablePagination(current => ({ ...current, current: 1 }))
+              }}
+            />
+          </div>
+          <Table
+            rowKey="draftKey"
+            dataSource={studentPreviewDrafts}
+            columns={studentColumns}
+            scroll={{ x: 'max-content' }}
+            pagination={{
+              current: tablePagination.current,
+              pageSize: tablePagination.pageSize,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              showSizeChanger: true,
+              showTotal: total => `Tổng ${total} bản sao Sinh viên`,
+              onChange: (current, pageSize) => setTablePagination({ current, pageSize }),
+            }}
+          />
+        </Card>
+      ) : (
+        <Row gutter={[16, 16]}>
+          {drafts.map(draft => (
+            <Col xs={24} lg={12} key={draft.draftKey}>
+              <Card
+                title={<span>Bản sao lớp <Tag color="blue">{draft.values.code || draft.values.name || draft.sourceId}</Tag></span>}
+                extra={<Button icon={<EditOutlined />} onClick={() => openEditor(draft)} disabled={saving}>Chỉnh sửa</Button>}
+              >
+                <Descriptions column={1} size="small">
+                  {fields.map(([key, label]) => (
+                    <Descriptions.Item key={key} label={label}>{draft.values[key] || '-'}</Descriptions.Item>
+                  ))}
+                </Descriptions>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      )}
       <div className="mt-4 d-flex justify-content-end">
-        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={commit}>Lưu tất cả ({drafts.length})</Button>
+        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={commit}>
+          {drafts.length === 1 ? 'Lưu bản sao' : `Lưu tất cả bản sao (${drafts.length})`}
+        </Button>
       </div>
       <Modal
-        visible={Boolean(editing)}
-        title={editing ? `Chỉnh sửa ${editing.draftKey}` : 'Chỉnh sửa draft'}
+        visible={Boolean(editingDraft)}
+        title={editingDraft ? `Chỉnh sửa ${editingDraft.values.code || editingDraft.values.fullname || 'bản sao'}` : 'Chỉnh sửa draft'}
         okText="Áp dụng vào draft"
         cancelText="Hủy"
         onOk={saveLocalDraft}
-        onCancel={() => setEditing(null)}
+        onCancel={() => setEditingDraftKey(null)}
         destroyOnClose
       >
         <Form form={form} layout="vertical">
@@ -197,15 +271,15 @@ const CopyPreviewPage = ({ entity, service }) => {
                     Modal.error({ title: 'Ảnh không hợp lệ', content: 'Chỉ nhận JPG/JPEG/PNG, tối đa 5MB.' })
                     return Upload.LIST_IGNORE
                   }
-                  setAttachmentFiles(current => ({ ...current, [editing.draftKey]: file }))
+                  setAttachmentFiles(current => ({ ...current, [editingDraftKey]: file }))
                   return false
                 }}
                 onRemove={() => setAttachmentFiles(current => {
                   const next = { ...current }
-                  delete next[editing.draftKey]
+                  delete next[editingDraftKey]
                   return next
                 })}
-                fileList={attachmentFiles[editing?.draftKey] ? [attachmentFiles[editing.draftKey]] : []}
+                fileList={attachmentFiles[editingDraftKey] ? [attachmentFiles[editingDraftKey]] : []}
                 maxCount={1}
               >
                 <Button icon={<UploadOutlined />}>Chọn ảnh mới</Button>
