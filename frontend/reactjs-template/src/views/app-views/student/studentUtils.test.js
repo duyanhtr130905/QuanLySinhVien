@@ -1,6 +1,6 @@
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate, formatStudentSex,
-  getPageScopedSelectionChange, getSafeHttpUrl, getSelectionAdjustedPagination,
+  buildStudentPageParams, getPageScopedSelectionChange, getSafeHttpUrl, getSelectionAdjustedPagination,
   getStudentRowKey, getStudentSortOrder, matchesStudentSearch, normalizeStudentRowKeys, toStudentApiIds
 } from './studentUtils'
 
@@ -167,5 +167,87 @@ describe('student shared helpers', () => {
       record => matchesStudentSearch(record, 'bình')
     )
     expect(records.map(record => record.id)).toEqual([2])
+  })
+
+  test('selects every record through selection-aware requests without skipping forward or backward pages', () => {
+    const allRecords = Array.from({ length: 42 }, (_, index) => ({
+      id: index + 1,
+      fullname: `Sinh viên ${index + 1}`,
+      email: `student${index + 1}@example.com`,
+    }))
+    const requestPage = (query, selectedRowKeys) => {
+      const params = buildStudentPageParams(query, selectedRowKeys)
+      const excluded = new Set(params.exclude_ids || [])
+      const remaining = allRecords.filter(record => !excluded.has(record.id))
+      return {
+        params,
+        records: remaining.slice((params.page - 1) * params.size, params.page * params.size),
+        totalItems: remaining.length,
+        totalPages: Math.ceil(remaining.length / params.size),
+      }
+    }
+    const selectCurrentPage = (query, selectedRowKeys, selectedRecordsById) => {
+      const response = requestPage(query, selectedRowKeys)
+      const change = getPageScopedSelectionChange({
+        apiRecords: response.records,
+        changeRows: response.records,
+        selected: true,
+        selectedRowKeys,
+        getRecordKey: getStudentRowKey,
+      })
+      return {
+        response,
+        selectedRowKeys: change.keys,
+        selectedRecordsById: change.records.reduce((records, record) => ({
+          ...records,
+          [getStudentRowKey(record)]: record,
+        }), { ...selectedRecordsById }),
+      }
+    }
+
+    let forwardKeys = []
+    let forwardRecordsById = {}
+    const firstPage = selectCurrentPage({ page: 1, size: 10 }, forwardKeys, forwardRecordsById)
+    expect(firstPage.response.records.map(record => record.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    forwardKeys = firstPage.selectedRowKeys
+    forwardRecordsById = firstPage.selectedRecordsById
+    let nextPage = requestPage({ page: 1, size: 10 }, forwardKeys)
+    expect(nextPage.records.map(record => record.id)).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+
+    while (nextPage.records.length) {
+      const selected = selectCurrentPage({ page: 1, size: 10 }, forwardKeys, forwardRecordsById)
+      forwardKeys = selected.selectedRowKeys
+      forwardRecordsById = selected.selectedRecordsById
+      nextPage = requestPage({ page: 1, size: 10 }, forwardKeys)
+      if (forwardKeys.length === 30) {
+        expect(nextPage.records.map(record => record.id)).toEqual([31, 32, 33, 34, 35, 36, 37, 38, 39, 40])
+      }
+    }
+    expect(forwardKeys).toHaveLength(42)
+    expect(Object.keys(forwardRecordsById)).toHaveLength(42)
+    expect(nextPage.totalPages).toBe(0)
+
+    let backwardKeys = []
+    let backwardRecordsById = {}
+    let backwardPage = 5
+    while (backwardKeys.length < allRecords.length) {
+      const selected = selectCurrentPage({ page: backwardPage, size: 10 }, backwardKeys, backwardRecordsById)
+      backwardKeys = selected.selectedRowKeys
+      backwardRecordsById = selected.selectedRecordsById
+      backwardPage = Math.max(1, Math.ceil((allRecords.length - backwardKeys.length) / 10))
+    }
+    expect(backwardKeys).toHaveLength(42)
+    expect(new Set(backwardKeys).size).toBe(42)
+
+    const afterDeselect = requestPage(
+      { page: 1, size: 10 },
+      forwardKeys.filter(key => key !== '5')
+    )
+    expect(afterDeselect.records.map(record => record.id)).toEqual([5])
+    const reachableIds = new Set([
+      ...forwardKeys.filter(key => key !== '5').map(Number),
+      ...afterDeselect.records.map(record => record.id),
+    ])
+    expect(reachableIds).toEqual(new Set(allRecords.map(record => record.id)))
   })
 })

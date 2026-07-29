@@ -6,7 +6,7 @@ StudentService.getByPage = function (params) {
   return fetch({
     url: '/student/page',
     method: 'get',
-    params // { page, size, order, search, columnlist, toplist }
+    params // { page, size, order, search, columnlist, toplist, exclude_ids }
   })
 }
 

@@ -21,7 +21,7 @@ import { deleteStudent, fetchStudentList } from 'redux/actions/Student'
 import { decodeHobbyBitmask } from '../student-create/studentFormUtils'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate as formatDate,
-  getPageScopedSelectionChange, getSafeHttpUrl, getSelectionAdjustedPagination,
+  buildStudentPageParams, getPageScopedSelectionChange, getSafeHttpUrl,
   getStudentRowKey, getStudentSortOrder, matchesStudentSearch, normalizeStudentRowKeys, toStudentApiIds
 } from '../studentUtils'
 import { getCopyErrorMessage } from '../student-copy/copyUtils'
@@ -65,14 +65,8 @@ const StudentList = () => {
   const [exportingStudentId, setExportingStudentId] = useState(null)
   const [copyingMany, setCopyingMany] = useState(false)
 
-  const loadStudents = (nextQuery = query) => {
-    const params = {
-      page: nextQuery.page,
-      size: nextQuery.size,
-      search: nextQuery.search,
-      order: nextQuery.order || undefined,
-    }
-    dispatch(fetchStudentList(params))
+  const loadStudents = (nextQuery = query, nextSelectedRowKeys = selectedRowKeys) => {
+    dispatch(fetchStudentList(buildStudentPageParams(nextQuery, nextSelectedRowKeys)))
   }
 
   useEffect(() => {
@@ -256,23 +250,8 @@ const StudentList = () => {
       record => matchesStudentSearch(record, query.search)
     )
   }, [apiRecords, query.search, selectedRecordsById, selectedRowKeys])
-  const pagination = getSelectionAdjustedPagination({
-    totalItems: pageInfo.total_items,
-    pageSize: query.size,
-    currentPage: query.page,
-    selectedRowKeys,
-    selectedRecordsById,
-    matchesRecord: record => matchesStudentSearch(record, query.search),
-  })
-  const totalItems = pagination.totalItems
-  const totalPages = pagination.totalPages
-
-  useEffect(() => {
-    if (listLoading || Number(pageInfo.current) !== query.page || query.page === pagination.currentPage) return
-    const nextQuery = { ...query, page: pagination.currentPage }
-    setQuery(nextQuery)
-    loadStudents(nextQuery)
-  }, [listLoading, pageInfo.current, pagination.currentPage, query]) // eslint-disable-line react-hooks/exhaustive-deps
+  const totalItems = Number(pageInfo.total_items) || 0
+  const totalPages = Math.max(1, Number(pageInfo.total_pages) || Math.ceil(totalItems / query.size))
 
   const moveColumn = (sourceKey, targetKey) => {
     setColumnOrder(currentOrder => {
@@ -350,6 +329,7 @@ const StudentList = () => {
       ? [...selectedRowKeys, key]
       : selectedRowKeys.filter(item => item !== key)
     updateSelection(keys, selected ? [record] : [])
+    loadStudents(query, keys)
   }
 
   const handleSelectAll = (selected, _, changeRows) => {
@@ -361,6 +341,7 @@ const StudentList = () => {
       getRecordKey: getStudentRowKey,
     })
     updateSelection(change.keys, change.records)
+    loadStudents(query, change.keys)
   }
 
   const handleSearch = value => {
@@ -480,7 +461,7 @@ const StudentList = () => {
 
         updateSelection(nextKeys)
         setQuery(nextQuery)
-        loadStudents(nextQuery)
+        loadStudents(nextQuery, nextKeys)
         message.success('Xóa sinh viên thành công')
         resolve()
       },
@@ -545,7 +526,7 @@ const StudentList = () => {
         ? selectedRowKeys.filter(key => !deletedKeySet.has(key))
         : selectedRowKeys
       updateSelection(remainingKeys)
-      loadStudents()
+      loadStudents(query, remainingKeys)
     } catch (error) {
       message.error(error.response?.data?.message || 'Lỗi xóa sinh viên')
       return Promise.reject(error)
@@ -602,7 +583,7 @@ const StudentList = () => {
             <Button type="primary" shape="circle" icon={<PlusOutlined />} onClick={() => history.push('/app/student/create')} />
           </div>
         </div>
-        {hasSelection && <div className="student-selection-summary">Đã chọn: {selectedRowKeys.length} sinh viên <Button type="link" size="small" onClick={() => updateSelection([])}>Bỏ chọn tất cả</Button></div>}
+        {hasSelection && <div className="student-selection-summary">Đã chọn: {selectedRowKeys.length} sinh viên <Button type="link" size="small" onClick={() => { updateSelection([]); loadStudents(query, []) }}>Bỏ chọn tất cả</Button></div>}
         <Card bodyStyle={{ padding: 0 }}>
           <Table
             columns={tableColumns}
@@ -616,7 +597,7 @@ const StudentList = () => {
           />
           <div className="student-list-pagination" style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', padding: 16 }}>
             <Pagination
-              current={pagination.currentPage}
+              current={Number(pageInfo.current) || query.page}
               pageSize={query.size}
               total={totalItems}
               showSizeChanger

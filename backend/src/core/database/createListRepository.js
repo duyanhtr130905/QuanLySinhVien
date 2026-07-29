@@ -47,7 +47,7 @@ const createListRepository = ({
     return result.rows.map(rowMapper);
   };
 
-  const getByPage = async ({ page, size, order, search, columnlist, toplist }) => {
+  const getByPage = async ({ page, size, order, search, columnlist, toplist, excludeIds }) => {
     const columns = getColumns(columnlist);
     const queryParams = [];
     const conditions = [...baseConditions];
@@ -56,6 +56,13 @@ const createListRepository = ({
       const parameter = `$${queryParams.length + 1}`;
       queryParams.push(`%${search}%`);
       conditions.push(`(${searchColumns.map((column) => `${column} ILIKE ${parameter}`).join(' OR ')})`);
+    }
+
+    const excludedIds = normalizeToplist(excludeIds);
+    if (excludedIds.length) {
+      const placeholders = excludedIds.map((_, index) => `$${queryParams.length + index + 1}`).join(', ');
+      queryParams.push(...excludedIds);
+      conditions.push(`id NOT IN (${placeholders})`);
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

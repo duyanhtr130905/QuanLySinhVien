@@ -95,6 +95,17 @@ export const normalizeStudentRowKeys = values => {
 
 export const toStudentApiIds = keys => normalizeStudentRowKeys(keys).map(Number)
 
+export const buildStudentPageParams = (query, selectedRowKeys) => {
+  const excludedIds = toStudentApiIds(selectedRowKeys)
+  return {
+    page: query.page,
+    size: query.size,
+    search: query.search,
+    order: query.order || undefined,
+    ...(excludedIds.length ? { exclude_ids: excludedIds } : {}),
+  }
+}
+
 const matchesText = (record, search, fields) => {
   const keyword = typeof search === 'string' ? search.trim().toLocaleLowerCase('vi') : ''
   if (!keyword) return true

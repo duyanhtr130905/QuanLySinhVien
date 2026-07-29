@@ -1,4 +1,4 @@
-const { parseRequiredPositiveId, parsePaginationQuery, parseIdList } = require('../../core/http/requestParsers');
+const { parseRequiredPositiveId, parsePaginationQuery, parseIdList, parseToplist } = require('../../core/http/requestParsers');
 const AppError = require('../../core/http/AppError');
 const errors = require('./student.errors');
 
@@ -58,12 +58,19 @@ const parseLegacyId = (value, errorConfig) => parseRequiredPositiveId(value, {
   legacyParseInt: true,
 });
 
-const parseStudentPageQuery = (query) => parsePaginationQuery(query, {
-  legacyParseInt: true,
-  pageError: errors.getByPage.invalidPage,
-  sizeError: errors.getByPage.invalidSize,
-  toplistOptions: { legacyParseInt: true, invalid: 'omit' },
-});
+const parseStudentPageQuery = (query) => {
+  const parsed = parsePaginationQuery(query, {
+    legacyParseInt: true,
+    pageError: errors.getByPage.invalidPage,
+    sizeError: errors.getByPage.invalidSize,
+    toplistOptions: { legacyParseInt: true, invalid: 'omit' },
+  });
+  if (query.exclude_ids === undefined) return parsed;
+  return {
+    ...parsed,
+    excludeIds: parseToplist(query.exclude_ids, { legacyParseInt: true, invalid: 'omit' }),
+  };
+};
 
 const parseLegacyIdList = (value, errorConfig) => parseIdList(value, { validate: false, errorConfig });
 

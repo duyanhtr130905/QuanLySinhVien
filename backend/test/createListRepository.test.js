@@ -72,6 +72,26 @@ test('list repository applies student soft-delete base filter without exposing p
   assert.doesNotMatch(pool.calls[1][0], /password/);
 });
 
+test('list repository excludes selected IDs before it counts and pages records', async () => {
+  const pool = createPool([{ rows: [{ count: '12' }] }, { rows: [{ id: 11 }] }]);
+  const repository = createListRepository({
+    pool,
+    tableName: 'tra_student',
+    validColumns: ['id', 'fullname'],
+    defaultColumns: ['id', 'fullname'],
+    columnAliases: { id: 'id' },
+    searchColumns: ['fullname'],
+  });
+  const page = await repository.getByPage({
+    page: 1, size: 10, excludeIds: [2, 5, 8],
+  });
+  assert.deepEqual(page.page_info, { total_items: 12, total_pages: 2, current: 1, size: 10 });
+  assert.match(pool.calls[0][0], /WHERE id NOT IN \(\$1, \$2, \$3\)/);
+  assert.deepEqual(pool.calls[0][1], [2, 5, 8]);
+  assert.match(pool.calls[1][0], /WHERE id NOT IN \(\$1, \$2, \$3\)/);
+  assert.deepEqual(pool.calls[1][1], [2, 5, 8, 10, 0]);
+});
+
 test('list repository can page only deleted students without exposing password columns', async () => {
   const pool = createPool([{ rows: [{ count: '1' }] }, { rows: [{ id: 8, deleted_at: '2026-01-01' }] }]);
   const repository = createListRepository({

@@ -44,14 +44,14 @@ test('student.getByPage rejects bad paging parameters before service access', as
   assert.equal(called, false);
 });
 
-test('student.getByPage parses toplist and forwards the current service object', async () => {
+test('student.getByPage parses toplist and excluded IDs before forwarding the service object', async () => {
   const calls = [];
   const data = { page_info: { current: 1 }, records: [] };
   const controller = controllerFor({ getByPage: async (...args) => { calls.push(args); return data; } });
   const res = makeRes();
-  await controller.getByPage(makeReq({ query: { page: '1', size: '10', toplist: '2, x, 5', search: 'An' } }), res, makeNext());
+  await controller.getByPage(makeReq({ query: { page: '1', size: '10', toplist: '2, x, 5', exclude_ids: '1, bad, 3x', search: 'An' } }), res, makeNext());
   expectApiResponse(res, 200, '200', 'Lấy danh sách sinh viên theo trang thành công', data);
-  assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: 'An', columnlist: undefined, toplist: [2, 5] }]]);
+  assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: 'An', columnlist: undefined, toplist: [2, 5], excludeIds: [1, 3] }]]);
 });
 
 test('student trash endpoints keep page, restore, permanent-delete, and partial-success contracts', async () => {
