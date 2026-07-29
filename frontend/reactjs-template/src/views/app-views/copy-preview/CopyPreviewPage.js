@@ -115,7 +115,7 @@ const CopyPreviewPage = ({ entity, service }) => {
       String(draft.values[key] || '').toLocaleLowerCase('vi').includes(keyword)
     )))
   }, [drafts, search])
-  const studentColumns = useMemo(() => [
+  const studentColumns = [
     {
       title: 'Ảnh', dataIndex: ['values', 'attachment'], key: 'attachment', width: 76,
       render: value => <Avatar shape="square" size={32} src={getSafeHttpUrl(value) || undefined} icon={<UserOutlined />} />,
@@ -146,7 +146,7 @@ const CopyPreviewPage = ({ entity, service }) => {
         </Tooltip>
       ),
     },
-  ], [classLabels, saving])
+  ]
 
   if (!preview || !drafts.length) {
     return (
