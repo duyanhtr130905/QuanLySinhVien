@@ -9,8 +9,8 @@ import classReducer from 'redux/reducers/Class'
 import {
   CLASS_AVAILABLE_STUDENTS_CLEAR, CLASS_AVAILABLE_STUDENTS_FETCH,
   CLASS_AVAILABLE_STUDENTS_FETCH_FAIL, CLASS_AVAILABLE_STUDENTS_FETCH_SUCCESS,
-  CLASS_AVAILABLE_STUDENTS_SELECTION_SET, CLASS_DETAIL_FETCH, CLASS_STUDENTS_ADD,
-  CLASS_STUDENTS_FETCH,
+ CLASS_AVAILABLE_STUDENTS_SELECTION_SET, CLASS_DETAIL_FETCH, CLASS_STUDENTS_ADD,
+ CLASS_STUDENTS_FETCH, CLASS_STUDENTS_FETCH_SUCCESS, CLASS_STUDENTS_REMOVE_MANY,
 } from 'redux/constants/Class'
 
 Object.defineProperty(window, 'matchMedia', {
@@ -46,8 +46,9 @@ const classroomState = {
 const selectionActionTypes = new Set([
   CLASS_AVAILABLE_STUDENTS_CLEAR,
   CLASS_AVAILABLE_STUDENTS_FETCH_FAIL,
-  CLASS_AVAILABLE_STUDENTS_FETCH_SUCCESS,
-  CLASS_AVAILABLE_STUDENTS_SELECTION_SET,
+ CLASS_AVAILABLE_STUDENTS_FETCH_SUCCESS,
+ CLASS_AVAILABLE_STUDENTS_SELECTION_SET,
+ CLASS_STUDENTS_FETCH_SUCCESS,
 ])
 
 const renderInteractiveDetail = (classroom = classroomState) => {
@@ -102,13 +103,46 @@ describe('ClassDetail', () => {
     expect(screen.queryByText('password')).toBeNull()
   })
 
-  test('opens the independent available-students modal for the current class', async () => {
+ test('opens the independent available-students modal for the current class', async () => {
     const { actions } = renderDetail('/app/class/detail/7')
     fireEvent.click(screen.getByRole('button', { name: /Thêm sinh viên/ }))
     expect(await screen.findByText('Thêm sinh viên vào lớp')).toBeTruthy()
     await waitFor(() => expect(actions.some(action => (
       action.type === CLASS_AVAILABLE_STUDENTS_FETCH && action.id === 7
     ))).toBe(true))
+  })
+
+  test('keeps normalized selected class-student keys and submits one batch removal', async () => {
+   const { actions, store } = renderInteractiveDetail()
+   const checkboxes = await screen.findAllByRole('checkbox')
+
+   fireEvent.click(checkboxes[1])
+
+   expect(await screen.findByText('Đã chọn 1 sinh viên')).toBeTruthy()
+   expect(screen.getByRole('button', { name: 'Loại khỏi lớp' }).disabled).toBe(false)
+
+   act(() => {
+    store.dispatch({
+     type: CLASS_STUDENTS_FETCH_SUCCESS,
+     data: {
+      records: [{ id: '3', code: 'SV03', fullname: 'An', sex: false }],
+      page_info: { total_items: 1, total_pages: 1, current: 1, size: 10 },
+     },
+    })
+   })
+
+   expect((await screen.findAllByRole('checkbox'))[1].checked).toBe(true)
+
+   fireEvent.click(screen.getByRole('button', { name: 'Loại khỏi lớp' }))
+   const dialog = await screen.findByRole('dialog')
+
+   expect(within(dialog).getByText(/SV03 - An/)).toBeTruthy()
+   fireEvent.click(within(dialog).getByRole('button', { name: 'Loại khỏi lớp' }))
+
+   const batchActions = actions.filter((action) => action.type === CLASS_STUDENTS_REMOVE_MANY)
+   expect(batchActions).toHaveLength(1)
+   expect(batchActions[0].studentIds).toEqual([3])
+   fireEvent.click(within(dialog).getByRole('button', { name: 'Hủy' }))
   })
 
   test('uses string row keys so a selected numeric API ID stays checked and renders once', async () => {

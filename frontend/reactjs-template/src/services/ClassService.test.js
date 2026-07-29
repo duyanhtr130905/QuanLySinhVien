@@ -80,6 +80,7 @@ describe('ClassService backend contracts', () => {
     ClassService.getAvailableStudents(7, params)
     ClassService.addStudentsToClass(7, [3, 4])
     ClassService.removeStudentFromClass(7, 3)
+    ClassService.removeStudentsFromClass(7, [3, 4])
     expect(fetch).toHaveBeenNthCalledWith(1, {
       url: '/class/7/students', method: 'get', params,
     })
@@ -91,6 +92,9 @@ describe('ClassService backend contracts', () => {
     })
     expect(fetch).toHaveBeenNthCalledWith(4, {
       url: '/class/7/students/3', method: 'delete',
+    })
+    expect(fetch).toHaveBeenNthCalledWith(5, {
+      url: '/class/7/students/remove', method: 'patch', data: { studentIds: [3, 4] },
     })
     expect(fetch).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/student/3', method: 'delete' }))
   })

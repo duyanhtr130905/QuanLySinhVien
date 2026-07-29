@@ -267,6 +267,19 @@ const massCopy = createMassCopyHandler({
   },
 });
 
+const removeStudents = asyncHandler(async (req, res) => {
+  try {
+    const classId = validator.parseClassStudentsId(req.params.id);
+    const studentIds = validator.parseStudentIds(req.body.studentIds);
+    const removedIds = await classService.removeStudents(classId, studentIds);
+    return successResponse(res, { studentIds: removedIds }, 'Loại sinh viên khỏi lớp thành công');
+  } catch (error) {
+    if (sendExpectedError(res, error)) return undefined;
+    error.fallbackCode = 'L600';
+    throw error;
+  }
+});
+
 const copyPreview = asyncHandler(async (req, res) => {
   try {
     const data = await classService.getCopyPreview(validator.parseMassCopyIdList(req.body.idlist));
@@ -314,6 +327,7 @@ module.exports = {
   massDelete,
   assignStudents,
   removeStudent,
+  removeStudents,
   copyOne,
   massCopy,
   copyPreview,

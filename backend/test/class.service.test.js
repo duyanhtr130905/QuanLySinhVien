@@ -218,6 +218,50 @@ test('class.removeStudent only clears class_id and never deletes the student', a
   assert.deepEqual(calls[2][1], [3, 7]);
 });
 
+test('class.removeStudents clears many class links atomically without deleting students', async () => {
+  const calls = [];
+  let released = false;
+  const client = {
+    query: async (...args) => {
+      calls.push(args);
+      const sql = args[0];
+      if (sql === 'SELECT id FROM tra_class WHERE id = $1 FOR UPDATE') return { rows: [{ id: 7 }] };
+      if (sql.startsWith('SELECT id, class_id, deleted_at')) {
+        return { rows: [{ id: '1', class_id: '7', deleted_at: null }, { id: 2, class_id: 7, deleted_at: null }] };
+      }
+      if (sql.startsWith('UPDATE tra_student')) return { rows: [{ id: 1 }, { id: 2 }] };
+      return { rows: [] };
+    },
+    release: () => { released = true; },
+  };
+  const service = loadService({ query: async () => ({ rows: [] }), connect: async () => client });
+  assert.deepEqual(await service.removeStudents(7, [1, '2', 1]), [1, 2]);
+  assert.equal(calls[0][0], 'BEGIN');
+  assert.match(calls[3][0], /^UPDATE tra_student SET class_id = NULL/);
+  assert.doesNotMatch(calls[3][0], /DELETE FROM tra_student/);
+  assert.deepEqual(calls[3][1], [[1, 2], 7]);
+  assert.equal(calls[4][0], 'COMMIT');
+  assert.equal(released, true);
+});
+
+test('class.removeStudents rolls back when any student is outside the class', async () => {
+  const calls = [];
+  const client = {
+    query: async (...args) => {
+      calls.push(args);
+      const sql = args[0];
+      if (sql === 'SELECT id FROM tra_class WHERE id = $1 FOR UPDATE') return { rows: [{ id: 7 }] };
+      if (sql.startsWith('SELECT id, class_id, deleted_at')) return { rows: [{ id: 1, class_id: 7, deleted_at: null }, { id: 2, class_id: 8, deleted_at: null }] };
+      return { rows: [] };
+    },
+    release: () => {},
+  };
+  const service = loadService({ query: async () => ({ rows: [] }), connect: async () => client });
+  await assert.rejects(() => service.removeStudents(7, [1, 2]), (error) => error.statusCode === 409 && error.errorCode === 'L608');
+  assert.equal(calls.at(-1)[0], 'ROLLBACK');
+  assert.equal(calls.some(([sql]) => typeof sql === 'string' && sql.startsWith('UPDATE tra_student')), false);
+});
+
 test('class.removeStudent compares normalized PostgreSQL class_id values', async () => {
   const calls = [];
   const pool = {

@@ -3,7 +3,7 @@ import {
   CLASS_LIST_FETCH, CLASS_DETAIL_FETCH, CLASS_DETAIL_CLEAR, CLASS_CREATE, CLASS_UPDATE, CLASS_DELETE,
   CLASS_MASS_DELETE, CLASS_STUDENTS_FETCH, CLASS_STUDENTS_CLEAR,
   CLASS_AVAILABLE_STUDENTS_FETCH, CLASS_AVAILABLE_STUDENTS_CLEAR,
-  CLASS_STUDENTS_ADD, CLASS_STUDENT_REMOVE,
+  CLASS_STUDENTS_ADD, CLASS_STUDENT_REMOVE, CLASS_STUDENTS_REMOVE_MANY,
   CLASS_COPY_ONE, CLASS_COPY_MANY, CLASS_IMPORT,
   CLASS_EXPORT_ONE, CLASS_EXPORT_MANY,
 } from '../constants/Class'
@@ -18,6 +18,7 @@ import {
   fetchAvailableStudentsSuccess, fetchAvailableStudentsFail,
   addStudentsToClassSuccess, addStudentsToClassFail,
   removeStudentFromClassSuccess, removeStudentFromClassFail,
+  removeStudentsFromClassSuccess, removeStudentsFromClassFail,
   copyClassSuccess, copyClassFail, copyManyClassesSuccess, copyManyClassesFail,
   importClassesSuccess, importClassesFail,
   exportClassSuccess, exportClassFail, exportManyClassesSuccess, exportManyClassesFail,
@@ -169,6 +170,20 @@ export function* removeStudentFromClassSaga() {
   })
 }
 
+export function* removeStudentsFromClassSaga() {
+  yield takeEvery(CLASS_STUDENTS_REMOVE_MANY, function* ({ classId, studentIds, onSuccess, onError }) {
+    try {
+      const response = yield call(ClassService.removeStudentsFromClass, classId, studentIds)
+      yield put(removeStudentsFromClassSuccess(response.data))
+      if (onSuccess) onSuccess(response.data)
+    } catch (error) {
+      const payload = getErrorPayload(error)
+      if (onError) onError(payload)
+      yield put(removeStudentsFromClassFail(payload?.message || 'Không thể loại sinh viên khỏi lớp'))
+    }
+  })
+}
+
 export function* copyClassSaga() {
   yield takeEvery(CLASS_COPY_ONE, function* ({ id, onSuccess, onError }) {
     try {
@@ -267,6 +282,7 @@ export default function* rootClassSaga() {
     fetchAvailableStudentsSaga(),
     addStudentsToClassSaga(),
     removeStudentFromClassSaga(),
+    removeStudentsFromClassSaga(),
     copyClassSaga(),
     copyManyClassesSaga(),
     importClassesSaga(),

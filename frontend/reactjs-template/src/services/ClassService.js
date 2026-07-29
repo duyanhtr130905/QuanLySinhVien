@@ -149,4 +149,12 @@ ClassService.removeStudentFromClass = function (classId, studentId) {
   })
 }
 
+ClassService.removeStudentsFromClass = function (classId, studentIds) {
+  return fetch({
+    url: `/class/${classId}/students/remove`,
+    method: 'patch',
+    data: { studentIds },
+  })
+}
+
 export default ClassService

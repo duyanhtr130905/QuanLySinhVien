@@ -100,6 +100,15 @@ test('class.removeStudent returns only the removed student id', async () => {
   assert.deepEqual(calls, [[7, 3]]);
 });
 
+test('class.removeStudents de-duplicates IDs and returns the batch removal contract', async () => {
+  const calls = [];
+  const controller = controllerFor({ removeStudents: async (...args) => { calls.push(args); return args[1]; } });
+  const res = makeRes();
+  await controller.removeStudents(makeReq({ params: { id: '7' }, body: { studentIds: [1, 2, 1] } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'Loại sinh viên khỏi lớp thành công', { studentIds: [1, 2] });
+  assert.deepEqual(calls, [[7, [1, 2]]]);
+});
+
 test('class.import supports every configured file extension and returns partial results', async () => {
   for (const extension of ['csv', 'xlsx', 'json', 'xml']) {
     const parseCalls = [];

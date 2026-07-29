@@ -11,7 +11,7 @@ import {
 import {
   addStudentsToClass, clearAvailableStudents, clearClassDetail, clearClassStudents,
   fetchAvailableStudents, fetchClassDetail, fetchClassStudents,
-  removeStudentFromClass, setSelectedAvailableStudentIds,
+  removeStudentFromClass, removeStudentsFromClass, setSelectedAvailableStudentIds,
 } from 'redux/actions/Class'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate, formatStudentDateTime,
@@ -59,12 +59,33 @@ const ClassDetail = () => {
   const selectedAvailableStudentsById = useSelector(state => state.classroom.selectedAvailableStudentsById)
   const addStudentsLoading = useSelector(state => state.classroom.addStudentsLoading)
   const removingStudentId = useSelector(state => state.classroom.removingStudentId)
+  const removeStudentsLoading = useSelector(state => state.classroom.removeStudentsLoading)
 
   const [studentsQuery, setStudentsQuery] = useState({ page: 1, size: 10, search: '', order: '' })
   const [studentsSearch, setStudentsSearch] = useState('')
   const [availableQuery, setAvailableQuery] = useState({ page: 1, size: 10, search: '', order: '' })
   const [availableSearch, setAvailableSearch] = useState('')
   const [availableVisible, setAvailableVisible] = useState(false)
+  const [selectedClassStudentIds, setSelectedClassStudentIds] = useState([])
+  const [selectedClassStudentsById, setSelectedClassStudentsById] = useState({})
+
+  const updateClassStudentSelection = (keys, records = []) => {
+    const ids = Array.from(new Set((Array.isArray(keys) ? keys : [])
+      .map(normalizeSelectedStudentKey)
+      .filter(id => id !== null)))
+    setSelectedClassStudentIds(ids)
+    setSelectedClassStudentsById(current => {
+      const nextRecordsById = {}
+      ids.forEach(id => {
+        if (current[id]) nextRecordsById[id] = current[id]
+      })
+      records.forEach(record => {
+        const id = normalizeSelectedStudentKey(record?.id)
+        if (id !== null && ids.includes(id)) nextRecordsById[id] = record
+      })
+      return nextRecordsById
+    })
+  }
 
   const updateAvailableSelection = (keys, records = []) => {
     const ids = Array.from(new Set((Array.isArray(keys) ? keys : [])
@@ -99,6 +120,8 @@ const ClassDetail = () => {
     dispatch(clearClassDetail())
     dispatch(clearClassStudents())
     dispatch(clearAvailableStudents())
+    setSelectedClassStudentIds([])
+    setSelectedClassStudentsById({})
     if (validId) {
       dispatch(fetchClassDetail(classId))
       loadClassStudents({ page: 1, size: 10, search: '', order: '' })
@@ -136,6 +159,28 @@ const ClassDetail = () => {
     const nextQuery = { ...studentsQuery, page: 1, order }
     setStudentsQuery(nextQuery)
     loadClassStudents(nextQuery)
+  }
+
+  const handleClassStudentRowSelect = (record, selected) => {
+    const recordId = normalizeSelectedStudentKey(record?.id)
+    if (recordId === null) return
+    updateClassStudentSelection(
+      selected
+        ? [...selectedClassStudentIds, recordId]
+        : selectedClassStudentIds.filter(id => id !== recordId),
+      selected ? [record] : []
+    )
+  }
+
+  const handleClassStudentSelectAll = (selected, _, changeRows) => {
+    const change = getPageScopedSelectionChange({
+      apiRecords: classStudents,
+      changeRows,
+      selected,
+      selectedRowKeys: selectedClassStudentIds,
+      getRecordKey: record => normalizeSelectedStudentKey(record?.id),
+    })
+    updateClassStudentSelection(change.keys, change.records)
   }
 
   const openAvailableStudents = () => {
@@ -256,8 +301,32 @@ const ClassDetail = () => {
         const lastPage = Math.max(1, Math.ceil(totalAfterRemoval / studentsQuery.size))
         const nextQuery = { ...studentsQuery, page: Math.min(studentsQuery.page, lastPage) }
         setStudentsQuery(nextQuery)
+        updateClassStudentSelection(selectedClassStudentIds.filter(id => id !== normalizeSelectedStudentKey(record.id)))
         refreshDetailAndStudents(nextQuery)
         message.success('Đã loại sinh viên khỏi lớp')
+        resolve()
+      },
+      error => {
+        message.error(getErrorMessage(error))
+        loadClassStudents()
+        reject(error)
+      }
+    ))
+  })
+
+  const removeSelectedStudents = studentIds => new Promise((resolve, reject) => {
+    dispatch(removeStudentsFromClass(
+      classId,
+      studentIds,
+      data => {
+        const removedIds = Array.isArray(data?.studentIds) ? data.studentIds : studentIds
+        const totalAfterRemoval = Math.max(0, Number(classStudentsPageInfo.total_items || 0) - removedIds.length)
+        const lastPage = Math.max(1, Math.ceil(totalAfterRemoval / studentsQuery.size))
+        const nextQuery = { ...studentsQuery, page: Math.min(studentsQuery.page, lastPage) }
+        setStudentsQuery(nextQuery)
+        updateClassStudentSelection([])
+        refreshDetailAndStudents(nextQuery)
+        message.success(`Đã loại ${removedIds.length} sinh viên khỏi lớp`)
         resolve()
       },
       error => {
@@ -279,6 +348,24 @@ const ClassDetail = () => {
     })
   }
 
+  const confirmRemoveSelectedStudents = () => {
+    const studentIds = selectedClassStudentIds.map(Number)
+      .filter(id => Number.isSafeInteger(id) && id > 0)
+    if (!studentIds.length || removeStudentsLoading || removingStudentId !== null) return
+    const selectedRecord = selectedClassStudentsById[selectedClassStudentIds[0]]
+    const content = studentIds.length === 1
+      ? `Bạn có chắc chắn muốn loại sinh viên “${selectedRecord?.code || '-'} - ${selectedRecord?.fullname || '-'}” khỏi lớp này không?`
+      : `Bạn có chắc chắn muốn loại ${studentIds.length} sinh viên khỏi lớp này không?`
+    Modal.confirm({
+      title: 'Xác nhận loại sinh viên khỏi lớp',
+      content,
+      okText: 'Loại khỏi lớp',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: () => removeSelectedStudents(studentIds),
+    })
+  }
+
   const studentColumns = useMemo(() => [
     { key: 'code', dataIndex: 'code', title: 'Mã sinh viên', sorter: true, sortOrder: getStudentSortOrder(studentsQuery.order, 'code'), width: 140 },
     { key: 'fullname', dataIndex: 'fullname', title: 'Họ tên', sorter: true, sortOrder: getStudentSortOrder(studentsQuery.order, 'fullname'), width: 190 },
@@ -296,7 +383,7 @@ const ClassDetail = () => {
             size="small"
             icon={<DeleteOutlined />}
             loading={removingStudentId === record.id}
-            disabled={removingStudentId !== null}
+            disabled={removingStudentId !== null || removeStudentsLoading}
             onClick={event => { event.stopPropagation(); confirmRemoveStudent(record) }}
           >
             Loại khỏi lớp
@@ -304,7 +391,7 @@ const ClassDetail = () => {
         </Tooltip>
       ),
     },
-  ], [removingStudentId, studentsQuery.order]) // eslint-disable-line react-hooks/exhaustive-deps
+  ], [removeStudentsLoading, removingStudentId, studentsQuery.order]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const availableColumns = useMemo(() => [
     { key: 'code', dataIndex: 'code', title: 'Mã sinh viên', sorter: true, sortOrder: getStudentSortOrder(availableQuery.order, 'code'), width: 140 },
@@ -337,7 +424,6 @@ const ClassDetail = () => {
         <div className="class-list-toolbar-actions">
           <Button icon={<ArrowLeftOutlined />} onClick={() => history.push(listRoute)}>Quay lại</Button>
           <Button icon={<EditOutlined />} onClick={() => history.push(`/app/class/edit/${classId}`)}>Chỉnh sửa</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openAvailableStudents}>Thêm sinh viên</Button>
         </div>
       </div>
 
@@ -366,12 +452,41 @@ const ClassDetail = () => {
             }}
             onSearch={handleStudentsSearch}
           />
+          <Tooltip title="Thêm sinh viên">
+            <Button
+              type="primary"
+              shape="circle"
+              icon={<PlusOutlined />}
+              aria-label="Thêm sinh viên"
+              onClick={openAvailableStudents}
+            />
+          </Tooltip>
+          <Button
+            danger
+            disabled={!selectedClassStudentIds.length || removeStudentsLoading || removingStudentId !== null}
+            loading={removeStudentsLoading}
+            onClick={confirmRemoveSelectedStudents}
+          >
+            Loại khỏi lớp
+          </Button>
         </div>
+        {selectedClassStudentIds.length > 0 && (
+          <div className="class-selection-summary">
+            Đã chọn {selectedClassStudentIds.length} sinh viên
+            <Button type="link" onClick={() => updateClassStudentSelection([])}>Bỏ chọn tất cả</Button>
+          </div>
+        )}
         {classStudentsError && <Alert className="m-3" type="error" showIcon message={classStudentsError} />}
         <Table
-          rowKey="id"
+          rowKey={record => normalizeSelectedStudentKey(record?.id) || String(record?.id || '')}
           columns={studentColumns}
           dataSource={classStudents}
+          rowSelection={{
+            selectedRowKeys: selectedClassStudentIds,
+            preserveSelectedRowKeys: true,
+            onSelect: handleClassStudentRowSelect,
+            onSelectAll: handleClassStudentSelectAll,
+          }}
           loading={classStudentsLoading}
           pagination={false}
           scroll={{ x: 'max-content' }}

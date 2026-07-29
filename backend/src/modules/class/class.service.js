@@ -312,6 +312,49 @@ const removeStudent = async (classId, studentId) => {
   return { studentId: result.rows[0].id };
 };
 
+const removeStudents = async (classId, studentIds) => {
+  const normalizedClassId = normalizeRequiredId(classId, errors.students.invalidId);
+  const normalizedStudentIds = normalizeStudentIds(studentIds);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const classResult = await client.query('SELECT id FROM tra_class WHERE id = $1 FOR UPDATE', [normalizedClassId]);
+    if (classResult.rows.length === 0) throw new AppError(errors.students.classNotFound);
+
+    const studentsResult = await client.query(
+      'SELECT id, class_id, deleted_at FROM tra_student WHERE id = ANY($1::int[]) FOR UPDATE',
+      [normalizedStudentIds]
+    );
+    const studentsById = new Map(studentsResult.rows.map((student) => [
+      normalizeRequiredId(student.id, errors.students.invalidStudentIds),
+      student,
+    ]));
+    const missingIds = normalizedStudentIds.filter((id) => !studentsById.has(id));
+    if (missingIds.length) throw new AppError({ ...errors.students.studentNotFound, message: `${errors.students.studentNotFound.message}: ${missingIds.join(', ')}` });
+
+    const deletedIds = normalizedStudentIds.filter((id) => studentsById.get(id).deleted_at !== null);
+    if (deletedIds.length) throw new AppError({ ...errors.students.studentDeleted, message: `${errors.students.studentDeleted.message}: ${deletedIds.join(', ')}` });
+
+    const notInClassIds = normalizedStudentIds.filter((id) => (
+      normalizePositiveId(studentsById.get(id).class_id) !== normalizedClassId
+    ));
+    if (notInClassIds.length) throw new AppError({ ...errors.students.studentNotInClass, message: `${errors.students.studentNotInClass.message}: ${notInClassIds.join(', ')}` });
+
+    const result = await client.query(
+      'UPDATE tra_student SET class_id = NULL, updated_at = NOW() WHERE id = ANY($1::int[]) AND class_id = $2 AND deleted_at IS NULL RETURNING id',
+      [normalizedStudentIds, normalizedClassId]
+    );
+    if (result.rows.length !== normalizedStudentIds.length) throw new AppError(errors.students.studentNotInClass);
+    await client.query('COMMIT');
+    return normalizedStudentIds;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 const getManyForExport = async (ids) => {
   const placeholders = ids.map((_, index) => `$${index + 1}`).join(', ');
   const result = await pool.query(
@@ -508,6 +551,7 @@ module.exports = {
   getAvailableStudentsByClass,
   assignStudents,
   removeStudent,
+  removeStudents,
   massDelete,
   copyOne,
   massCopy,
