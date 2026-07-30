@@ -88,6 +88,14 @@ StudentService.copyPreview = function (idlist) {
   })
 }
 
+StudentService.validateCopyDrafts = function (drafts) {
+  return fetch({
+    url: '/student/copy/validate',
+    method: 'post',
+    data: { drafts },
+  })
+}
+
 StudentService.commitCopyDrafts = function (drafts) {
   return fetch({
     url: '/student/copy/commit',

@@ -52,7 +52,7 @@ test('edits a class draft locally and only commits on Save', async () => {
   fireEvent.change(code, { target: { value: 'C04-final' } })
   fireEvent.click(screen.getByText('Áp dụng vào draft'))
 
-  await waitFor(() => expect(screen.getAllByText('C04-final')).toHaveLength(2))
+  await waitFor(() => expect(screen.getAllByText('C04-final')).toHaveLength(1))
   expect(service.commitCopyDrafts).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('Lưu bản sao'))
   await waitFor(() => expect(service.commitCopyDrafts).toHaveBeenCalledWith([
@@ -92,6 +92,20 @@ test('renders student drafts in a paginated table and saves every draft', async 
   expect(await screen.findByText('SV25')).toBeTruthy()
   fireEvent.click(screen.getByText('Lưu tất cả bản sao (25)'))
   await waitFor(() => expect(service.commitCopyDrafts).toHaveBeenCalledWith(studentPreview.drafts))
+})
+
+test('disables Save all while batch validation reports a row error', async () => {
+  const service = {
+    validateCopyDrafts: jest.fn().mockResolvedValue({ data: { rows: [{ draftKey: 'class-4', status: 'invalid', errors: { code: 'duplicate' } }] } }),
+    commitCopyDrafts: jest.fn(),
+  }
+  renderPreview(service)
+  await waitFor(() => expect(service.validateCopyDrafts).toHaveBeenCalledTimes(1))
+  const save = screen.getByText('Lưu bản sao').closest('button')
+  expect(save.disabled).toBe(true)
+  fireEvent.click(save)
+  expect(service.commitCopyDrafts).not.toHaveBeenCalled()
+  expect(screen.getByText('Cần chỉnh sửa')).toBeTruthy()
 })
 
 test('shows an informative empty state when preview route state is missing', () => {

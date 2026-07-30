@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Prompt, useHistory, useLocation } from 'react-router-dom'
-import { Alert, Avatar, Breadcrumb, Button, Card, Col, Descriptions, Form, Input, Modal, Radio, Result, Row, Table, Tag, Tooltip, Upload } from 'antd'
+import { Alert, Avatar, Breadcrumb, Button, Card, Form, Input, Modal, Radio, Result, Table, Tag, Tooltip, Upload } from 'antd'
 import { EditOutlined, SaveOutlined, UploadOutlined, UserOutlined } from '@ant-design/icons'
 import ClassService from 'services/ClassService'
 import { formatStudentDate, formatStudentSex, getSafeHttpUrl, unwrapCollection } from '../student/studentUtils'
@@ -23,11 +23,14 @@ const CopyPreviewPage = ({ entity, service }) => {
   const [drafts, setDrafts] = useState(() => (Array.isArray(preview?.drafts) ? preview.drafts.map(normalizeDraft) : []))
   const [editingDraftKey, setEditingDraftKey] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [validating, setValidating] = useState(false)
+  const [validationByDraftKey, setValidationByDraftKey] = useState({})
   const [attachmentFiles, setAttachmentFiles] = useState({})
   const [classLabels, setClassLabels] = useState({})
   const [search, setSearch] = useState('')
   const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 10 })
   const [form] = Form.useForm()
+  const validationRequest = useRef(0)
   const dirty = Object.keys(attachmentFiles).length > 0 || drafts.some(draft => (
     JSON.stringify(draft.values) !== JSON.stringify(preview?.drafts?.find(item => item.draftKey === draft.draftKey)?.values)
   ))
@@ -64,9 +67,39 @@ const CopyPreviewPage = ({ entity, service }) => {
     return () => { active = false }
   }, [entity])
 
+  useEffect(() => {
+    if (!drafts.length) return undefined
+    if (typeof service.validateCopyDrafts !== 'function') {
+      setValidationByDraftKey(Object.fromEntries(drafts.map(draft => [draft.draftKey, { status: 'valid', errors: {} }])))
+      setValidating(false)
+      return undefined
+    }
+    const requestId = validationRequest.current + 1
+    validationRequest.current = requestId
+    setValidating(true)
+    const timer = setTimeout(async () => {
+      try {
+        const response = await service.validateCopyDrafts(drafts)
+        if (validationRequest.current !== requestId) return
+        const rows = (response?.data || response)?.rows || []
+        setValidationByDraftKey(Object.fromEntries(rows.map(row => [row.draftKey, row])))
+      } catch (_) {
+        if (validationRequest.current !== requestId) return
+        setValidationByDraftKey(Object.fromEntries(drafts.map(draft => [draft.draftKey, {
+          status: 'invalid', errors: { _global: 'KhÃ´ng thá»ƒ kiá»ƒm tra draft. Vui lÃ²ng thá»­ láº¡i.' },
+        }])))
+      } finally {
+        if (validationRequest.current === requestId) setValidating(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [drafts, service])
+
   const openEditor = draft => {
     setEditingDraftKey(draft.draftKey)
     form.setFieldsValue(draft.values)
+    const errors = validationByDraftKey[draft.draftKey]?.errors || {}
+    form.setFields(Object.entries(errors).filter(([name]) => name !== '_global').map(([name, error]) => ({ name, errors: [error] })))
   }
 
   const editingDraft = drafts.find(draft => draft.draftKey === editingDraftKey)
@@ -82,8 +115,10 @@ const CopyPreviewPage = ({ entity, service }) => {
     })
   }
 
+  const hasInvalidDraft = drafts.some(draft => validationByDraftKey[draft.draftKey]?.status !== 'valid')
+
   const commit = async () => {
-    if (!drafts.length || saving) return
+    if (!drafts.length || saving || validating || hasInvalidDraft) return
     setSaving(true)
     try {
       const payload = entity === 'student' && Object.keys(attachmentFiles).length
@@ -115,6 +150,22 @@ const CopyPreviewPage = ({ entity, service }) => {
       String(draft.values[key] || '').toLocaleLowerCase('vi').includes(keyword)
     )))
   }, [drafts, search])
+  const classPreviewDrafts = useMemo(() => {
+    const keyword = search.trim().toLocaleLowerCase('vi')
+    if (!keyword) return drafts
+    return drafts.filter(draft => ['code', 'name', 'description'].some(key => (
+      String(draft.values[key] || '').toLocaleLowerCase('vi').includes(keyword)
+    )))
+  }, [drafts, search])
+  const statusColumn = {
+    title: 'Tr\u1ea1ng th\u00e1i', key: 'status', width: 220,
+    render: (_, draft) => {
+      const state = validationByDraftKey[draft.draftKey]
+      if (validating || !state) return <Tag color="processing">{'Đang ki\u1ec3m tra'}</Tag>
+      if (state.status === 'valid') return <Tag color="success">{ 'H\u1ee3p l\u1ec7' }</Tag>
+      return <Tooltip title={Object.values(state.errors || {}).join(' • ')}><Tag color="error">{ 'C\u1ea7n ch\u1ec9nh s\u1eeda' }</Tag></Tooltip>
+    },
+  }
   const studentColumns = [
     {
       title: 'Ảnh', dataIndex: ['values', 'attachment'], key: 'attachment', width: 76,
@@ -148,6 +199,15 @@ const CopyPreviewPage = ({ entity, service }) => {
     },
   ]
 
+  studentColumns.splice(-1, 0, statusColumn)
+  const classColumns = [
+    { title: 'M\u00e3 l\u1edbp', dataIndex: ['values', 'code'], key: 'code', width: 180, render: value => value || '-' },
+    { title: 'T\u00ean l\u1edbp', dataIndex: ['values', 'name'], key: 'name', width: 260, render: value => value || '-' },
+    { title: 'M\u00f4 t\u1ea3', dataIndex: ['values', 'description'], key: 'description', render: value => value || '-' },
+    statusColumn,
+    { title: 'H\u00e0nh \u0111\u1ed9ng', key: 'action', width: 120, align: 'right', render: (_, draft) => <Button type="text" icon={<EditOutlined />} disabled={saving} onClick={() => openEditor(draft)}>{ 'Ch\u1ec9nh s\u1eeda' }</Button> },
+  ]
+
   if (!preview || !drafts.length) {
     return (
       <div>
@@ -179,7 +239,37 @@ const CopyPreviewPage = ({ entity, service }) => {
       {Array.isArray(preview.notFoundIds) && preview.notFoundIds.length > 0 && (
         <Alert className="mb-3" type="warning" showIcon message={`Không tìm thấy ID: ${preview.notFoundIds.join(', ')}`} />
       )}
-      {entity === 'student' ? (
+      <Card bodyStyle={{ padding: 0 }}>
+        <div className="p-3">
+          <Search
+            allowClear
+            placeholder={entity === 'student' ? 'T\u00ecm ki\u1ebfm b\u1ea3n sao Sinh vi\u00ean...' : 'T\u00ecm ki\u1ebfm b\u1ea3n sao L\u1edbp...'}
+            value={search}
+            onChange={event => {
+              setSearch(event.target.value)
+              setTablePagination(current => ({ ...current, current: 1 }))
+            }}
+          />
+        </div>
+        <Table
+          rowKey="draftKey"
+          dataSource={entity === 'student' ? studentPreviewDrafts : classPreviewDrafts}
+          columns={entity === 'student' ? studentColumns : classColumns}
+          scroll={{ x: 'max-content' }}
+          onRow={draft => ({ onClick: () => {
+            if (validationByDraftKey[draft.draftKey]?.status === 'invalid') openEditor(draft)
+          } })}
+          pagination={{
+            current: tablePagination.current,
+            pageSize: tablePagination.pageSize,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            showSizeChanger: true,
+            showTotal: total => `T\u1ed5ng ${total} b\u1ea3n sao ${entity === 'student' ? 'Sinh vi\u00ean' : 'L\u1edbp'}`,
+            onChange: (current, pageSize) => setTablePagination({ current, pageSize }),
+          }}
+        />
+      </Card>
+      {false ? (
         <Card bodyStyle={{ padding: 0 }}>
           <div className="p-3">
             <Search
@@ -207,7 +297,7 @@ const CopyPreviewPage = ({ entity, service }) => {
             }}
           />
         </Card>
-      ) : (
+      ) : null /*
         <Row gutter={[16, 16]}>
           {drafts.map(draft => (
             <Col xs={24} lg={12} key={draft.draftKey}>
@@ -224,9 +314,9 @@ const CopyPreviewPage = ({ entity, service }) => {
             </Col>
           ))}
         </Row>
-      )}
+      */}
       <div className="mt-4 d-flex justify-content-end">
-        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={commit}>
+        <Button type="primary" icon={<SaveOutlined />} loading={saving || validating} disabled={saving || validating || hasInvalidDraft} onClick={commit}>
           {drafts.length === 1 ? 'Lưu bản sao' : `Lưu tất cả bản sao (${drafts.length})`}
         </Button>
       </div>

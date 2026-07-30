@@ -57,11 +57,15 @@ describe('ClassService backend contracts', () => {
   test('uses preview and explicit commit endpoints for draft copies', () => {
     const drafts = [{ draftKey: 'class-1', sourceId: 1, values: { code: 'C1-copy', name: 'A' } }]
     ClassService.copyPreview([1, 2])
+    ClassService.validateCopyDrafts(drafts)
     ClassService.commitCopyDrafts(drafts)
     expect(fetch).toHaveBeenNthCalledWith(1, {
       url: '/class/copy/preview', method: 'post', data: { idlist: [1, 2] },
     })
     expect(fetch).toHaveBeenNthCalledWith(2, {
+      url: '/class/copy/validate', method: 'post', data: { drafts },
+    })
+    expect(fetch).toHaveBeenNthCalledWith(3, {
       url: '/class/copy/commit', method: 'post', data: { drafts },
     })
   })

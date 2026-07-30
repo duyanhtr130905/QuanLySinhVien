@@ -79,6 +79,14 @@ ClassService.copyPreview = function (idlist) {
   })
 }
 
+ClassService.validateCopyDrafts = function (drafts) {
+  return fetch({
+    url: '/class/copy/validate',
+    method: 'post',
+    data: { drafts },
+  })
+}
+
 ClassService.commitCopyDrafts = function (drafts) {
   return fetch({
     url: '/class/copy/commit',
