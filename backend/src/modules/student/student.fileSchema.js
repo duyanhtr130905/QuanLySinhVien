@@ -63,7 +63,9 @@ const normalizeHobbyName = value => normalizeText(value).toLocaleLowerCase('vi')
 
 const parseHobbyNames = value => {
   const names = new Map();
-  normalizeText(value).split(';').map(name => normalizeText(name)).filter(Boolean).forEach((name) => {
+  const tokens = (Array.isArray(value) ? value : [value])
+    .flatMap(item => normalizeText(item).split(';'));
+  tokens.map(name => normalizeText(name)).filter(Boolean).forEach((name) => {
     const key = normalizeHobbyName(name);
     if (!names.has(key)) names.set(key, name);
   });

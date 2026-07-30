@@ -48,6 +48,7 @@ test('student file parser keeps friendly gender/date and normalizes hobbies by d
   assert.equal(parsed.gender, true);
   assert.equal(parsed.dob, '2004-01-15');
   assert.deepEqual(parsed.hobbies, ['Đọc sách', 'BÓNG đá']);
+  assert.deepEqual(normalizeFileRow({ hobbies: [' Đọc sách ', 'Bóng đá; đọc SÁCH'] }).hobbies, ['Đọc sách', 'Bóng đá']);
   assert.deepEqual(normalizeFileRow({ gender: 'False' }).gender, false);
   assert.deepEqual(normalizeFileRow({ gender: '1' }).gender, true);
 });

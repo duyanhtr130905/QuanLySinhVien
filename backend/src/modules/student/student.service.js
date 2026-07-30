@@ -831,7 +831,7 @@ const validateImportDrafts = async (drafts, queryable = pool) => {
     if (values.email.length > 256) errors.email = 'email exceeds 256 characters';
     if (values.facebook && (values.facebook.length > 256 || !/^https?:\/\/[0-9a-zA-Z.\-_]+$/.test(values.facebook))) errors.facebook = 'facebook must be a valid http/https URL';
     const missingHobbies = values.hobbies.filter(name => !hobbyByName.has(normalizeHobbyName(name)));
-    if (missingHobbies.length) errors.hobbies = `Hobby chÆ°a tá»“n táº¡i: ${missingHobbies.join('; ')}`;
+    if (missingHobbies.length) errors.hobbies = `Hobby chưa tồn tại: ${missingHobbies.join('; ')}`;
     return { draftKey: draft?.draftKey || `import-${index + 1}`, rowNumber: draft?.rowNumber || index + 2, values, mode: existing ? 'update' : 'create', errors, fieldErrors: errors, missingHobbies };
   });
   return { rows: rows.map(row => ({ ...row, status: Object.keys(row.errors).length ? 'invalid' : 'valid' })), lookups };

@@ -84,7 +84,7 @@ test('student import update keeps an empty password and converts hobby names to 
     release: () => {},
   };
   const service = loadService({ query: async () => ({ rows: [] }), connect: async () => client });
-  const result = await service.commitImportDrafts([validDraft({ password: '', hobbies: 'đọc SÁCH; Bóng đá' })]);
+  const result = await service.commitImportDrafts([validDraft({ password: '', hobbies: ['đọc SÁCH', 'Bóng đá'] })]);
   const update = calls.find(([sql]) => sql.startsWith('UPDATE tra_student'));
   assert.equal(result.updated.length, 1);
   assert.doesNotMatch(update[0], /password =/);
