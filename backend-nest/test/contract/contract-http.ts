@@ -6,17 +6,27 @@ export interface ContractHttpResponse {
   body: unknown;
 }
 
+export interface ContractRequestOptions {
+  method?: 'DELETE' | 'GET' | 'POST';
+  body?: unknown;
+}
+
 export async function requestContractTarget(
   target: ContractTarget,
   path: string,
   timeoutMs: number,
+  options: ContractRequestOptions = {},
 ): Promise<ContractHttpResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${target.baseUrl}${path}`, {
-      headers: { accept: 'application/json' },
+      method: options.method,
+      headers: options.body === undefined
+        ? { accept: 'application/json' }
+        : { accept: 'application/json', 'content-type': 'application/json' },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: controller.signal,
     });
     const body = await response.json().catch(() => undefined);

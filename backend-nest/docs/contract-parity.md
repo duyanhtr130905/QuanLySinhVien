@@ -5,12 +5,14 @@ Phase 0 enumerated 47 legacy routes in [the API contract baseline](../../backend
 | Area | Legacy | Nest | Shared contract |
 | --- | ---: | ---: | --- |
 | Health/global | Yes | Yes | Active |
-| Hobby | Yes | Not migrated | Pending Phase 4 |
+| Hobby | Yes | Yes | Active |
 | Class core | Yes | Not migrated | Pending |
 | Class advanced | Yes | Not migrated | Pending |
 | Student core | Yes | Not migrated | Pending |
 | Student advanced | Yes | Not migrated | Pending |
 
-The active global suite checks `GET /` for the exact legacy health payload and `GET /api` for a `404` status. It runs independently against every selected HTTP target, so matching responses between two targets alone is never treated as sufficient evidence of compliance.
+The active global suite checks `GET /` for the exact legacy health payload and `GET /api` for a `404` status. The active Hobby suite checks the active list, validation, create/duplicate/delete/not-found flow, and legacy envelopes independently against every selected HTTP target, so matching responses between two targets alone is never treated as sufficient evidence of compliance.
+
+Hobby in-use protection and bit exhaustion are covered by NestJS unit tests. They are intentionally not black-box fixture tests yet: the contract harness does not create Student records or consume all 31 hobby bits in a shared database.
 
 No skipped placeholder tests are recorded for modules that have not yet migrated. New module contract suites will be added only when their NestJS endpoints exist.
