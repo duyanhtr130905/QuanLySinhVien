@@ -790,6 +790,34 @@ const getOneById = async (id) => {
   return result.rows.length ? result.rows[0] : null;
 };
 
+const IMPORT_COMPARISON_FIELDS = ['fullname', 'dob', 'gender', 'class', 'email', 'username', 'homecity', 'address', 'hobbies', 'description', 'hair_color', 'facebook'];
+const databaseDateToIso = value => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+};
+const sameHobbies = (left, right) => {
+  const normalize = values => [...new Set((values || []).map(normalizeHobbyName))].sort();
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+};
+const buildImportComparison = (values, record, lookups) => {
+  if (!record) return { kind: 'create', changedFields: [], systemValues: null };
+  const classById = new Map(lookups.classes.map(item => [Number(item.id), item.code || '']));
+  const systemValues = {
+    code: record.code || '', fullname: record.fullname || '', dob: databaseDateToIso(record.dob), gender: record.sex,
+    class: classById.get(Number(record.class_id)) || '', email: String(record.email || '').trim().toLowerCase(),
+    username: record.username || '', homecity: record.homecity || '', address: record.address || '',
+    hobbies: lookups.hobbies.filter(hobby => (Number(record.hobbies || 0) & Number(hobby.bit_value)) !== 0).map(hobby => hobby.name),
+    description: record.description || '', hair_color: record.hair_color || '', facebook: record.facebook || '',
+  };
+  const changedFields = IMPORT_COMPARISON_FIELDS.filter((field) => {
+    if (field === 'hobbies') return !sameHobbies(values.hobbies, systemValues.hobbies);
+    return (values[field] ?? '') !== (systemValues[field] ?? '');
+  });
+  if (values.password) changedFields.push('password');
+  return { kind: changedFields.length ? 'changed' : 'unchanged', changedFields, systemValues };
+};
+
 const validateImportDrafts = async (drafts, queryable = pool) => {
   const input = Array.isArray(drafts) ? drafts : [];
   const lookups = await getFileLookups(queryable);
@@ -799,7 +827,7 @@ const validateImportDrafts = async (drafts, queryable = pool) => {
   const valuesFor = field => [...new Set(normalized.map(values => values[field]).filter(Boolean))];
   const codes = valuesFor('code');
   const existingResult = (codes.length || valuesFor('email').length || valuesFor('username').length) ? await queryable.query(
-    'SELECT id, code, email, username FROM tra_student WHERE (code = ANY($1::text[]) OR email = ANY($2::text[]) OR username = ANY($3::text[])) AND deleted_at IS NULL',
+    'SELECT id, code, fullname, dob, sex, class_id, email, username, homecity, address, hobbies, description, hair_color, facebook FROM tra_student WHERE (code = ANY($1::text[]) OR email = ANY($2::text[]) OR username = ANY($3::text[])) AND deleted_at IS NULL',
     [codes, valuesFor('email'), valuesFor('username')]
   ) : { rows: [] };
   const existingByCode = new Map(existingResult.rows.map(row => [row.code, row]));
@@ -808,21 +836,21 @@ const validateImportDrafts = async (drafts, queryable = pool) => {
   const rows = input.map((draft, index) => {
     const values = normalizeFileRow(draft?.values);
     const errors = {};
-    if (!values.code) errors.code = 'MÃ£ sinh viÃªn lÃ  báº¯t buá»™c';
-    else if (values.code.length > 50) errors.code = 'MÃ£ sinh viÃªn quÃ¡ 50 kÃ½ tá»±';
-    else if (counts.code.get(values.code) > 1) errors.code = 'MÃ£ sinh viÃªn bá»‹ trÃ¹ng trong file';
-    if (!values.fullname) errors.fullname = 'Há» tÃªn lÃ  báº¯t buá»™c'; else if (values.fullname.length > 30) errors.fullname = 'Há» tÃªn quÃ¡ 30 kÃ½ tá»±';
-    if (!values.email || !/^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/.test(values.email)) errors.email = 'Email khÃ´ng há»£p lá»‡'; else if (counts.email.get(values.email) > 1) errors.email = 'Email bá»‹ trÃ¹ng trong file';
-    if (!values.username) errors.username = 'Username lÃ  báº¯t buá»™c'; else if (values.username.length > 50) errors.username = 'Username quÃ¡ 50 kÃ½ tá»±'; else if (counts.username.get(values.username) > 1) errors.username = 'Username bá»‹ trÃ¹ng trong file';
-    if (values.gender === undefined) errors.gender = 'Giá»›i tÃ­nh pháº£i lÃ  Nam/Ná»¯ hoáº·c True/False/1/0';
-    if (values.dob === undefined) errors.dob = 'NgÃ y sinh pháº£i theo DD/MM/YYYY';
+    if (!values.code) errors.code = 'Mã sinh viên là bắt buộc';
+    else if (values.code.length > 50) errors.code = 'Mã sinh viên quá 50 ký tự';
+    else if (counts.code.get(values.code) > 1) errors.code = 'Mã sinh viên bị trùng trong file';
+    if (!values.fullname) errors.fullname = 'Họ tên là bắt buộc'; else if (values.fullname.length > 30) errors.fullname = 'Họ tên quá 30 ký tự';
+    if (!values.email || !/^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/.test(values.email)) errors.email = 'Email không hợp lệ'; else if (counts.email.get(values.email) > 1) errors.email = 'Email bị trùng trong file';
+    if (!values.username) errors.username = 'Username là bắt buộc'; else if (values.username.length > 50) errors.username = 'Username quá 50 ký tự'; else if (counts.username.get(values.username) > 1) errors.username = 'Username bị trùng trong file';
+    if (values.gender === undefined) errors.gender = 'Giới tính phải là Nam/Nữ hoặc True/False/1/0';
+    if (values.dob === undefined) errors.dob = 'Ngày sinh phải theo DD/MM/YYYY';
     const existing = existingByCode.get(values.code);
     existingResult.rows.forEach((record) => {
-      if (record.code !== values.code && record.email === values.email) errors.email = 'Email Ä‘Ã£ tá»“n táº¡i';
-      if (record.code !== values.code && record.username === values.username) errors.username = 'Username Ä‘Ã£ tá»“n táº¡i';
+      if (record.code !== values.code && record.email === values.email) errors.email = `Email đã thuộc về sinh viên ${record.code}`;
+      if (record.code !== values.code && record.username === values.username) errors.username = `Username đã thuộc về sinh viên ${record.code}`;
     });
-    if (!existing && !values.password) errors.password = 'Password báº¯t buá»™c khi táº¡o má»›i';
-    if (values.class && !classByCode.has(values.class.toLocaleLowerCase('vi'))) errors.class = 'Lá»›p khÃ´ng tá»“n táº¡i';
+    if (!existing && !values.password) errors.password = 'Password bắt buộc khi tạo mới';
+    if (values.class && !classByCode.has(values.class.toLocaleLowerCase('vi'))) errors.class = 'Lớp không tồn tại';
     if (values.password && /^\$2[aby]\$/.test(values.password)) errors.password = 'Password import must not be a hash';
     else if (values.password && !/^(?=.*[0-9])(?=.*[A-Z])(?=.*[a-z])(?=.*[^A-Za-z0-9\s]).{8,}$/.test(values.password)) errors.password = 'Password must include upper/lowercase, number, special character and be at least 8 characters';
     if (values.homecity.length > 100) errors.homecity = 'homecity exceeds 100 characters';
@@ -832,7 +860,8 @@ const validateImportDrafts = async (drafts, queryable = pool) => {
     if (values.facebook && (values.facebook.length > 256 || !/^https?:\/\/[0-9a-zA-Z.\-_]+$/.test(values.facebook))) errors.facebook = 'facebook must be a valid http/https URL';
     const missingHobbies = values.hobbies.filter(name => !hobbyByName.has(normalizeHobbyName(name)));
     if (missingHobbies.length) errors.hobbies = `Hobby chưa tồn tại: ${missingHobbies.join('; ')}`;
-    return { draftKey: draft?.draftKey || `import-${index + 1}`, rowNumber: draft?.rowNumber || index + 2, values, mode: existing ? 'update' : 'create', errors, fieldErrors: errors, missingHobbies };
+    const comparison = buildImportComparison(values, existing, lookups);
+    return { draftKey: draft?.draftKey || `import-${index + 1}`, rowNumber: draft?.rowNumber || index + 2, values, mode: comparison.kind === 'create' ? 'create' : 'update', comparison, errors, fieldErrors: errors, missingHobbies };
   });
   return { rows: rows.map(row => ({ ...row, status: Object.keys(row.errors).length ? 'invalid' : 'valid' })), lookups };
 };

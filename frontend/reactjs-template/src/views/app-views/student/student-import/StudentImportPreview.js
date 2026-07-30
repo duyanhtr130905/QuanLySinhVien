@@ -9,12 +9,21 @@ const { Option } = Select
 
 const apiData = response => response?.data || response || {}
 const validationInput = drafts => drafts.map(({ draftKey, rowNumber, values }) => ({ draftKey, rowNumber, values }))
+const prepareRows = (rows, previous = []) => rows.map((row) => {
+  const old = previous.find(item => item.draftKey === row.draftKey)
+  return { ...row, selected: old ? old.selected : row.status === 'valid' && row.comparison?.kind === 'create' }
+})
+const comparisonLabel = row => ({
+  create: 'Tạo mới',
+  unchanged: 'Đã tồn tại · Không thay đổi',
+  changed: 'Đã tồn tại · Có thay đổi',
+}[row.comparison?.kind] || 'Chưa đối chiếu')
 
 const StudentImportPreview = () => {
   const history = useHistory()
   const location = useLocation()
   const initial = location.state?.preview
-  const [drafts, setDrafts] = useState(() => initial?.rows || [])
+  const [drafts, setDrafts] = useState(() => prepareRows(initial?.rows || []))
   const [validating, setValidating] = useState(false)
   const [committing, setCommitting] = useState(false)
   const [editingKey, setEditingKey] = useState(null)
@@ -33,7 +42,7 @@ const StudentImportPreview = () => {
     const timer = setTimeout(async () => {
       try {
         const response = await StudentService.validateImportDrafts(validationInput(drafts))
-        if (id === request.current) setDrafts(apiData(response).rows || [])
+        if (id === request.current) setDrafts(current => prepareRows(apiData(response).rows || [], current))
       } catch (_) {
         if (id === request.current) setDrafts(current => current.map(draft => ({
           ...draft,
@@ -47,7 +56,8 @@ const StudentImportPreview = () => {
     return () => clearTimeout(timer)
   }, [initial, validationKey])
 
-  const invalid = drafts.some(draft => draft.status !== 'valid')
+  const selectedDrafts = drafts.filter(draft => draft.selected)
+  const invalid = selectedDrafts.some(draft => draft.status !== 'valid')
   const errorsFor = draft => draft.fieldErrors || draft.errors || {}
   const openEdit = draft => {
     const values = draft.values || {}
@@ -70,7 +80,7 @@ const StudentImportPreview = () => {
     try {
       await HobbyService.create(hobbyName.trim())
       const response = await StudentService.validateImportDrafts(validationInput(drafts))
-      if (id === request.current) setDrafts(apiData(response).rows || [])
+      if (id === request.current) setDrafts(current => prepareRows(apiData(response).rows || [], current))
       setHobbyName(null)
       message.success('Đã tạo Hobby và kiểm tra lại các dòng')
     } catch (error) {
@@ -81,10 +91,10 @@ const StudentImportPreview = () => {
     }
   }
   const commit = async () => {
-    if (invalid || validating || committing) return
+    if (!selectedDrafts.length || invalid || validating || committing) return
     setCommitting(true)
     try {
-      const data = apiData(await StudentService.commitImportDrafts(validationInput(drafts)))
+      const data = apiData(await StudentService.commitImportDrafts(validationInput(selectedDrafts)))
       message.success(`Đã lưu ${(data.created || []).length} tạo mới và ${(data.updated || []).length} cập nhật`)
       history.replace('/app/student/list')
     } catch (error) {
@@ -107,7 +117,7 @@ const StudentImportPreview = () => {
   }), [drafts, search])
   const columns = [
     { title: 'Dòng', dataIndex: 'rowNumber', width: 70 },
-    { title: 'Chế độ', dataIndex: 'mode', render: value => <Tag color={value === 'create' ? 'blue' : 'green'}>{value === 'create' ? 'Tạo mới' : 'Cập nhật'}</Tag> },
+    { title: 'Đối chiếu hệ thống', render: (_, row) => <Tag title={(row.comparison?.changedFields || []).join(', ')} color={row.comparison?.kind === 'create' ? 'blue' : row.comparison?.kind === 'changed' ? 'orange' : 'default'}>{comparisonLabel(row)}{row.comparison?.kind === 'changed' ? `: ${(row.comparison.changedFields || []).join(', ')}` : ''}</Tag> },
     { title: 'Mã Sinh viên', dataIndex: ['values', 'code'] },
     { title: 'Họ tên', dataIndex: ['values', 'fullname'] },
     { title: 'Email', dataIndex: ['values', 'email'] },
@@ -122,7 +132,7 @@ const StudentImportPreview = () => {
           ? <Tag color="success">Hợp lệ</Tag>
           : <Tag color="error">Cần chỉnh sửa: {Object.values(errorsFor(row)).join(' • ')}</Tag>,
     },
-    { title: 'Hành động', render: (_, row) => <Button onClick={() => openEdit(row)}>Chỉnh sửa</Button> },
+    { title: 'Hành động', render: (_, row) => <><Button onClick={() => openEdit(row)}>Chỉnh sửa</Button><Button type="link" onClick={() => setDrafts(current => current.map(item => item.draftKey === row.draftKey ? { ...item, selected: false } : item))}>Bỏ qua</Button></> },
   ]
   if (!initial) return <Button onClick={() => history.replace('/app/student/import')}>Quay lại Import</Button>
   const editing = drafts.find(draft => draft.draftKey === editingKey)
@@ -130,9 +140,11 @@ const StudentImportPreview = () => {
   return <div>
     <h1>Xem trước nhập dữ liệu Sinh viên</h1>
     <Input.Search placeholder="Tìm draft..." value={search} onChange={event => setSearch(event.target.value)} className="mb-3" />
+    <Button className="mr-2 mb-2" onClick={() => setDrafts(current => current.map(row => ({ ...row, selected: row.status === 'valid' && row.comparison?.kind === 'create' })))}>Chọn tất cả tạo mới</Button>
+    <Button className="mb-2" onClick={() => setDrafts(current => current.map(row => row.comparison?.kind === 'create' ? row : { ...row, selected: false }))}>Bỏ qua bản ghi đã tồn tại</Button>
     {missing.map(name => <Button key={name} className="mr-2 mb-2" onClick={() => setHobbyName(name)}>Thêm nhanh Hobby: {name}</Button>)}
-    <Table rowKey="draftKey" dataSource={filtered} columns={columns} pagination={{ defaultPageSize: 10, pageSizeOptions: ['10', '20', '50', '100'], showSizeChanger: true }} />
-    <Button type="primary" disabled={invalid || validating || committing} loading={committing || validating} onClick={commit}>Lưu tất cả ({drafts.length})</Button>
+    <Table rowKey="draftKey" dataSource={filtered} columns={columns} rowSelection={{ selectedRowKeys: drafts.filter(row => row.selected).map(row => row.draftKey), onChange: keys => setDrafts(current => current.map(row => ({ ...row, selected: keys.includes(row.draftKey) }))), getCheckboxProps: row => ({ disabled: row.status !== 'valid' }) }} pagination={{ defaultPageSize: 10, pageSizeOptions: ['10', '20', '50', '100'], showSizeChanger: true }} />
+    <Button type="primary" disabled={!selectedDrafts.length || invalid || validating || committing} loading={committing || validating} onClick={commit}>Lưu các dòng đã chọn ({selectedDrafts.length})</Button>
     <Modal visible={Boolean(editing)} title="Chỉnh sửa dòng import" onOk={applyEdit} onCancel={() => setEditingKey(null)} okText="Áp dụng thay đổi">
       <Form form={form} layout="vertical">
         <Form.Item name="code" label="Mã" rules={[{ required: true }]}><Input /></Form.Item>

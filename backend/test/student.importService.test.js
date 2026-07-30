@@ -77,7 +77,7 @@ test('student import update keeps an empty password and converts hobby names to 
       if (sql.includes('FROM tra_class')) return { rows: [{ id: 2, code: 'CTK42' }] };
       if (sql.includes('FROM tra_hobby')) return { rows: [{ id: 1, name: 'Đọc sách', bit_value: 1 }, { id: 2, name: 'Bóng đá', bit_value: 2 }] };
       if (sql.includes('FOR UPDATE')) return { rows: [{ id: 7, code: 'SV01' }] };
-      if (sql.includes('SELECT id, code, email, username')) return { rows: [{ id: 7, code: 'SV01', email: 'a@example.com', username: 'student-a' }] };
+      if (sql.includes('SELECT id, code, fullname')) return { rows: [{ id: 7, code: 'SV01', email: 'a@example.com', username: 'student-a' }] };
       if (sql.startsWith('UPDATE tra_student')) return { rows: [{ id: 7, code: 'SV01' }] };
       throw new Error(`Unexpected SQL: ${sql}`);
     },
