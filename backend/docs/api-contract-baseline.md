@@ -1,71 +1,87 @@
-# API contract baseline (Task 0)
+# API contract baseline
 
-Snapshot taken from the current `develop` implementation before the backend controller refactor.  Routes have **no `/api` or version prefix**.  Unless noted otherwise, successful controller responses use HTTP 200 and this envelope:
+Source of truth: `backend/src` on `develop` commit `74f50c767d375c95d15def9710bd513243ab9979`. This is a characterization document, not a proposal.
 
-```json
-{ "code": "200", "status": 200, "message": "<Vietnamese message>", "data": "<payload>" }
-```
+## Global contract
 
-All JSON errors use `{ "code": "<module code>", "status": <HTTP status>, "message": "<Vietnamese message>", "data": null }`. Unhandled controller/service errors call `next(err)` after setting the documented fallback code; `errorHandler` returns HTTP 500 with that fallback code and message `Lỗi hệ thống không xác định`. Errors that already carry `httpStatus` and `errorCode` retain those values.
+- Routes have no `/api` or version prefix. `cors()` and `express.json()` apply before all module routes. There is no authentication middleware.
+- JSON success is always HTTP 200: `{ "code": "200", "status": 200, "message": "<Vietnamese message>", "data": <payload> }`.
+- JSON errors are `{ "code": "<module code>", "status": <HTTP status>, "message": "<Vietnamese message>", "data": null }`; import-commit validation is the exception and returns invalid rows in `data`.
+- Known errors with `statusCode` and `errorCode` preserve those values. Unexpected errors use the controller fallback (`B600` through `L600`), HTTP 500, and `Lỗi hệ thống không xác định`.
+- `GET /` is the only non-envelope success: `{ "status": "ok", "message": "Quản lý Sinh viên API đang hoạt động" }`.
 
-## Application-level routes and middleware
+## Route ordering and multipart
 
-| Method | Route | Inputs | Success response | Errors / behavior | Called service |
-|---|---|---|---|---|---|
-| GET | `/` | none | HTTP 200, raw `{ status: "ok", message: "Quản lý Sinh viên API đang hoạt động" }` (not the envelope) | Express/default errors only | none |
+Fixed Student paths (`/page`, `/deleted/*`, `/copy/*`, `/import/*`, `/export/*`) precede `/:id`; `/copy`, `/copy/preview`, `/copy/validate`, and `/copy/commit` precede `/copy/:id`. Fixed Class paths similarly precede `/:id`; membership paths `/:id/students*` precede `/:id`. This declaration order is part of the contract.
 
-`express.json()` parses JSON globally and CORS is enabled. Student image create/update routes run multer memory storage for field `attachment`: only jpg/jpeg/png, max 5 MB; rejected files return `400 E603` (`Ảnh phải là jpg/jpeg/png, tối đa 5MB`). Import runs memory storage field `file`, max 10 MB (other multer errors pass to the global handler).
+- Student create/update: `multipart/form-data`, optional `attachment`, memory storage, jpg/jpeg/png only, max 5 MB. Multer rejects invalid type/oversize with `400 E603`, `Ảnh phải là jpg/jpeg/png, tối đa 5MB`.
+- Student copy commit: `upload.any()`; draft images use fields `attachment-<draftKey>`. The same image error middleware runs.
+- Student import and Class import: multipart field `file`, memory storage, max 10 MB. Class oversize becomes `400 J604`, `File không được vượt quá 10MB`; Student import has no local multer-error mapper and other Multer errors fall through the global handler.
+- Supported import/export types are `csv`, `xlsx`, `json`, `xml`; default export type is `xlsx`. Binary responses do not use the envelope.
 
-## Class (`/class`)
+## Class routes (`/class`)
 
-| Method | Route | Inputs | Success `data` / message | Error status/code | Controller service method |
-|---|---|---|---|---|---|
-| GET | `/class` | query: `columnlist` | array of classes; `Lấy danh sách lớp thành công` | unhandled → `B600` | `classService.getAll(columnlist)` |
-| GET | `/class/page` and `/class/page/:init` | query: required `page`, `size`; optional `order`, `search`, `columnlist`, `toplist` (comma-separated integers) | `{ page_info, records }`; `Lấy danh sách lớp theo trang thành công` | `400 C601` invalid page; `400 C602` invalid size; unhandled → `C600`. `:init` is not read by controller. | `getByPage({ page: parseInt(page), size: parseInt(size), order, search, columnlist, toplist: valid parsed ints })` |
-| POST | `/class` | JSON body: required `code`, `name`; optional `description` | service result (normally `{ id }`); `Tạo lớp thành công` | `400 E603` missing required / `code` >50 / `name` >255; `409 E603` duplicate code; unhandled → `E600` | `store({ code, name, description })` |
-| PUT | `/class/:id` | path `id`; JSON body: optional `code`, `name`, `description` | service result; `Cập nhật lớp thành công` | `400 F601` invalid id; `400 F603` too-long code/name or blank supplied name; `404 F604` absent result; `409 F603` duplicate code; unhandled → `F600` | `update(parseInt(id), { code, name, description })` |
-| DELETE | `/class/delete` | JSON body: nonempty `ids` array | `{ ids: deletedIds }`; all deleted: `Xóa các lớp thành công`; partial blocked: `Đã xóa N lớp. Không thể xóa M lớp vì còn sinh viên liên kết (ids: …)` | `400 I604` invalid `ids`; unhandled → `I600` | `massDelete(ids)` |
-| DELETE | `/class/:id` | path `id` | service result; `Xóa lớp thành công` | `400 G601` invalid id; `404 G604` `existsById` false; `409 G605` FK `23503`; unhandled → `G600` | `existsById(id)`, then `destroy(id)` |
-| POST | `/class/copy/:id` | path `id` | copied class; `Sao chép lớp thành công` | `400 H601` invalid id; `404 H604` null result; unhandled → `H600` | `copyOne(id)` |
-| POST | `/class/copy` | JSON body: nonempty `idlist` array | `created` array; all found: `Sao chép N lớp thành công`; partial: `Đã sao chép N lớp. Không tìm thấy ids: …` | `400 H603` invalid list; `404 H604` when all are missing; unhandled → `H600` | `massCopy(idlist)` |
+| Method and route | Input and normalization | Success (HTTP 200) | Errors / flow |
+|---|---|---|---|
+| `GET /class` | query `columnlist` | class list; `Lấy danh sách lớp thành công` | fallback `B600`; `classService.getAll(columnlist)` |
+| `GET /class/page`, `/class/page/:init` | required query `page`, `size`; optional `order`, `search`, `columnlist`, comma `toplist`. Legacy `parseInt`; invalid toplist entries omitted; `:init` ignored. | `{ page_info, records }`; `Lấy danh sách lớp theo trang thành công` | `400 C601` `Số trang không hợp lệ`; `400 C602` `Cỡ trang không hợp lệ`; fallback `C600`; `getByPage` |
+| `GET /class/:id` | positive legacy-parsed `id` | class including `student_count`; `Lấy chi tiết lớp thành công` | `400 D601`; `404 D604` `Không tìm thấy bản ghi lớp học`; fallback `D600`; `getOneById` |
+| `POST /class` | JSON `code`, `name` required and trimmed; optional `description`; limits 50/255 | `{ id }`; `Tạo lớp thành công` | `400 E603` required/length; `409 E603` `Mã lớp (code) đã tồn tại`; fallback `E600`; `store` |
+| `PUT /class/:id` | legacy id; JSON optional `name`, `description`; supplied `code` is ignored | `{ id }`; `Cập nhật lớp thành công` | `400 F601` invalid id; `400 F603` blank/too-long name; `404 F604`; fallback `F600`; `update` |
+| `DELETE /class/:id` | legacy id | `{ id }`; `Xóa lớp thành công` | `400 G601`; `404 G604`; PostgreSQL `23503` -> `409 G605` `Không thể xóa: Lớp học này vẫn còn sinh viên liên kết`; fallback `G600`; `existsById`, `destroy` |
+| `DELETE /class/delete` | JSON nonempty array `ids`; values are passed through without per-item validator | `{ deletedIds, blockedIds }`; full `Xóa các lớp thành công`, otherwise message names blocked ids | `400 I604` `Danh sách ids không hợp lệ`; fallback `I600`; each delete is independent, `23503` is added to `blockedIds`, missing ids are silently omitted; `massDelete` |
+| `POST /class/copy/:id` | legacy id | copied record; `Sao chép lớp thành công` | `400 H601`; `404 H604`; fallback `H600`; `copyOne` |
+| `POST /class/copy` | JSON nonempty `idlist`, values passed through | created-record array; full/partial copy Vietnamese count message | `400 H603`; all missing -> `404 H604`; fallback `H600`; mass copy transaction rolls back unexpected writes but treats missing sources as partial success |
+| `POST /class/copy/preview` | JSON `idlist` | `{ drafts }`; `Đã tạo N draft lớp` | copy errors `H603/H604`; read-only batched lookup; `getCopyPreview` |
+| `POST /class/copy/validate` | JSON `drafts` | validation payload; `ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao lá»›p` | draft errors `400 H603`; `validateCopyDrafts` |
+| `POST /class/copy/commit` | JSON nonempty drafts, each `{ draftKey, sourceId, values:{code,name,description} }`; code/name trimmed | `{ created:[{draftKey,record}] }`; `Đã tạo N lớp` | malformed `400 H603`; duplicate `409 E603`; source missing `404 H604`; transaction rechecks sources and duplicates then commits all or rolls back; `commitCopyDrafts` |
+| `GET /class/:id/students` | legacy class id; required `page`,`size`; optional `search`,`order`,`columnlist` | `{ page_info, records }`; `Lấy danh sách sinh viên trong lớp thành công` | `400 L601/L609/L610`; missing class `404 L604`; fallback `L600`; active students only, no password; `getStudentsByClass` |
+| `GET /class/:id/available-students` | same paging input | `{ page_info, records }`; `Lấy danh sách sinh viên có thể thêm vào lớp thành công` | same `L*` errors; active, unassigned students only; `getAvailableStudentsByClass` |
+| `POST /class/:id/students` | legacy id; JSON nonempty valid positive `studentIds`, deduplicated | `{ studentIds }`; `Thêm sinh viên vào lớp thành công` | `400 L601/L603`, `404 L604/L605`, `409 L606/L607`; fallback `L600`; locks class/students and atomically assigns all or rolls back; `assignStudents` |
+| `PATCH /class/:id/students/remove` | same `studentIds` input | `{ studentIds }`; `Loại sinh viên khỏi lớp thành công` | `400 L601/L603`, `404 L604/L605`, `409 L606/L608`; fallback `L600`; transactional all-or-nothing unlink; `removeStudents` |
+| `DELETE /class/:id/students/:studentId` | two legacy ids | `{ studentId }`; `Loại sinh viên khỏi lớp thành công` | `400 L601`; `404 L604/L605`; `409 L608` if not assigned to class; fallback `L600`; only clears `class_id`; `removeStudent` |
+| `POST /class/import` | multipart `file`; rows `code`, `name`, optional `description`; code/name trimmed | `{ created, failed }`; `Import thành công N dòng, lỗi M dòng` | `400 J601` unsupported type; `400 J604` missing/unreadable/empty/oversize; fallback `J600`; each row calls `store`, so valid rows remain when later rows fail |
+| `GET /class/export/:id` | legacy id; query `type` | binary, `attachment; filename="class-<id>.<ext>"` | `400 K601` invalid id/type; `404 K604`; fallback `K600`; `getOneForExport` |
+| `POST /class/export` | JSON nonempty positive `idlist`, optional `type` | binary, `attachment; filename="classes-export.<ext>"` | `400 K601`; fallback `K600`; `getManyForExport` |
 
-## Hobby (`/hobby`)
+## Hobby routes (`/hobby`)
 
-| Method | Route | Inputs | Success `data` / message | Error status/code | Controller service method |
-|---|---|---|---|---|---|
-| GET | `/hobby` | none | active hobby array; `Lấy danh sách sở thích thành công` | unhandled → `B600` | `hobbyService.getAll()` |
-| POST | `/hobby` | JSON body: required `name` (trimmed, nonempty, max 30) | created hobby; `Tạo sở thích thành công` | `400 E603` invalid name; `422 E604` exhausted hobby bits; `409 E603` unique violation (message varies by constraint); unhandled → `E600` | `store(name.trim())` |
-| DELETE | `/hobby/:id` | path `id` | `{ id }` normally; `Xóa sở thích thành công` | `400 G601` invalid id; `404 G604` hobby missing; `409 G605` used by a non-deleted student; unhandled → `G600` | `findById(id)`, `isUsedByStudent(hobby.bit_value)`, then `destroy(id)` |
+| Method and route | Input | Success (HTTP 200) | Errors / flow |
+|---|---|---|---|
+| `GET /hobby` | none | active hobbies ordered by bit; `Lấy danh sách sở thích thành công` | fallback `B600`; `getAll` |
+| `POST /hobby` | JSON required `name`, trim, max 30 | hobby `{id,code,name,bit_value,is_active}`; `Tạo sở thích thành công` | `400 E603`; `422 E604` when all bits 2^0..2^30 are occupied; `409 E603` unique constraint message; fallback `E600`. `store` allocates the smallest unused bit and code `HB<bit_value>` |
+| `DELETE /hobby/:id` | legacy id | `{ id }`; `Xóa sở thích thành công` | `400 G601`; `404 G604`; `409 G605` `Không thể xóa: sở thích này đang được sinh viên sử dụng`; fallback `G600`. Hard delete only after checking active students' hobby bitmask |
 
-## Student (`/student`)
+## Student routes (`/student`)
 
-Student bodies are JSON when invoked directly, or `multipart/form-data` on create/update. Multipart conversion is part of the existing contract: `sex` strings `true`/`false` become booleans (other strings become `null`); `class_id` `''`, `'-1'`, or invalid becomes `null`; `hobbies` empty/invalid becomes `0`.
+Student create validation requires `code`, `fullname`, `email`, `username`, `password`. It enforces lengths, email/Facebook regexes, strong password, and hobby bitmask against active hobbies. Update validates only supplied fields. Multipart normalization preserves typed JSON values: `sex` string `true`/`false` becomes boolean (other string -> `null`); `class_id` `''`, `-1`, or unparseable -> `null`; `hobbies` empty/unparseable -> `0`.
 
-| Method | Route | Inputs | Success `data` / message | Error status/code | Controller service method |
-|---|---|---|---|---|---|
-| GET | `/student` | query: `columnlist` | active (not soft-deleted) student array; `Lấy danh sách sinh viên thành công` | unhandled → `B600` | `studentService.getAll(columnlist)` |
-| GET | `/student/page` and `/student/page/:init` | query: required `page`, `size`; optional `order`, `search`, `columnlist`, `toplist` comma-list | `{ page_info, records }`; `Lấy danh sách sinh viên theo trang thành công` | `400 C601` invalid page; `400 C602` invalid size; unhandled → `C600`. `:init` is ignored. | `getByPage({ page, size, order, search, columnlist, toplist })` after integer parsing |
-| GET | `/student/export/:id` | path `id`; query `type` (`csv`, `xlsx`, `json`, `xml`; default `xlsx`) | binary body from `buildFile([student], type)`, headers `Content-Type` and `attachment; filename="student-{id}.{extension}"` | `400 K601` invalid type; `404 K604` service returned null; unhandled → `K600`. No controller validation of `id` before service call. | `getOneById(parseInt(id))` |
-| GET | `/student/:id` | path `id` | student record; `Lấy chi tiết sinh viên thành công` | `400 D601` invalid id; `404 D604` null result; unhandled → `D600` | `getOneById(parseInt(id))` |
-| POST | `/student` | multipart/JSON: required `code`, `fullname`, `email`, `username`, `password`; optional `dob`, `sex`, `homecity`, `address`, `hair_color`, `facebook`, `class_id`, `description`, `hobbies`; optional image `attachment` | created student; `Tạo sinh viên thành công` | `400 E603` validation or invalid `class_id`; `409 E603` unique violation; unhandled → `E600` (uploaded attachment is cleaned up on failure) | `getActiveHobbyMask()`, optional `uploadAttachment(file, code)`, `store({ ...parsedBody, attachment })` |
-| PUT | `/student/:id` | path `id`; same optional multipart/JSON fields; optional image `attachment` | updated student; `Cập nhật sinh viên thành công` | `400 F601` invalid id; `400 F603` validation or invalid `class_id`; `404 F604` null result; `409 F603` unique violation; unhandled → `F600` (new attachment cleaned on DB failure; old attachment removed after success) | `getActiveHobbyMask()`, optional `getAttachmentById(id)`, `uploadAttachment(file, "id{id}")`, `update(id, body)` |
-| DELETE | `/student` | JSON body: nonempty `idlist` array | `{ deleted, notFound }`; full: `Xóa N sinh viên thành công`; partial: `Đã xóa N sinh viên. Không tìm thấy ids: …` | `400 G603` invalid list; `404 G604` when none deleted and missing; unhandled → `G600` | `massDestroy(idlist)` |
-| DELETE | `/student/:id` | path `id` | service result (normally `{ id }`); `Xóa sinh viên thành công` | `400 G601` invalid id; `404 G604` null result; unhandled → `G600` | `destroy(parseInt(id))` |
-| POST | `/student/copy/:id` | path `id` | copied student; `Sao chép sinh viên thành công` | `400 H601` invalid id; `404 H604` null result; unhandled → `H600` | `copyOne(parseInt(id))` |
-| POST | `/student/copy` | JSON body: nonempty `idlist` array | `created` array; full: `Sao chép N sinh viên thành công`; partial: `Đã sao chép N sinh viên. Không tìm thấy ids: …` | `400 H603` invalid list; `404 H604` when all missing; unhandled → `H600` | `massCopy(idlist)` |
-| POST | `/student/import` | multipart field `file`; extension must be csv/xlsx/json/xml; each parsed row follows create validation | `{ created, failed }`; `Import thành công N dòng, lỗi M dòng` | `400 J604` missing/unreadable/empty file; `400 J601` unsupported extension; unhandled → `J600` | `getActiveHobbyMask()` once, then `store(normalizedRow)` for each valid row. File parsing uses `parseFile`. |
-| POST | `/student/export` | JSON body: nonempty `idlist`; optional `type` (`csv`, `xlsx`, `json`, `xml`; default `xlsx`) | binary `buildFile(students, type)`, headers `Content-Type` and `attachment; filename="students-export.{extension}"` | `400 K601` invalid list or type; unhandled → `K600` | `getManyByIds(idlist)` |
+| Method and route | Input and normalization | Success (HTTP 200) | Errors / flow |
+|---|---|---|---|
+| `GET /student` | query `columnlist` | active list; `Lấy danh sách sinh viên thành công` | fallback `B600`; `getAll` |
+| `GET /student/page`, `/student/page/:init` | required `page`,`size`; optional `order`,`search`,`columnlist`,`toplist`,`exclude_ids` or `exclude_ids[]`; legacy parseInt and omit invalid ids; `:init` ignored | `{ page_info, records }`; `Lấy danh sách sinh viên theo trang thành công` | `400 C601/C602`; fallback `C600`; active rows, no password; `getByPage` |
+| `GET /student/:id` | legacy id | record; `Lấy chi tiết sinh viên thành công` | `400 D601`; `404 D604` `Không tìm thấy sinh viên`; fallback `D600`; `getOneById` |
+| `POST /student` | JSON or multipart fields above; optional image `attachment` | created record without password; `Tạo sinh viên thành công` | validation/class FK `400 E603`; unique `409 E603`; fallback `E600`; uploads before DB write and compensates by deleting new upload on failure; `getActiveHobbyMask`, storage adapter, `store` |
+| `PUT /student/:id` | legacy id; optional create fields/image; `code` and `username` are ignored by service | updated active record; `Cập nhật sinh viên thành công` | `400 F601/F603`; `404 F604`; unique `409 F603`; fallback `F600`. New upload is deleted if DB fails/missing row; old upload is removed only after DB success; failed old-file cleanup does not roll back DB. `update` |
+| `DELETE /student/:id` | legacy id | `{ id }`; `Xóa sinh viên thành công` | `400 G601`; `404 G604`; fallback `G600`; database trigger performs soft delete; `destroy` |
+| `DELETE /student` | JSON nonempty `idlist`; individual values passed through | `{ deleted, notFound }`; full or partial count message | `400 G603`; if none deleted `404 G604`; fallback `G600`. One transaction rolls back unexpected errors but commits partial missing-id result; `massDestroy` |
+| `GET /student/deleted/page` | page query as active paging | `{ page_info, records }`; `Lấy danh sách sinh viên đã xóa thành công` | `400 C601/C602`; fallback `L600`; selects only soft-deleted rows; `getDeletedByPage` |
+| `PATCH /student/deleted/restore` | JSON nonempty strictly positive `idlist` | `{ restored, notFound, conflicts }`; `Đã khôi phục N sinh viên` | `400 L603`; fallback `L600`. Deduplicates ids; one transaction, per-row savepoint turns uniqueness race into `conflicts`; `restoreDeleted` |
+| `DELETE /student/deleted/permanent` | JSON nonempty strictly positive `idlist` | `{ deleted, notFound }`; `Đã xóa vĩnh viễn N sinh viên` | `400 L603`; fallback `L600`. Deletes only soft-deleted rows transactionally; after commit, deletes only unreferenced unique attachment URLs. Storage cleanup failure is logged and does not undo DB deletion; `permanentlyDelete` |
+| `POST /student/copy/:id` | legacy id | copied record; `Sao chép sinh viên thành công` | `400 H601`; `404 H604`; fallback `H600`; `copyOne` |
+| `POST /student/copy` | JSON nonempty `idlist`, values passed through | created-record array, full/partial count message | `400 H603`; all missing `404 H604`; fallback `H600`; transaction rolls back unexpected writes, but missing sources are partial success; `massCopy` |
+| `POST /student/copy/preview` | JSON `idlist` | `{ drafts }`; `Đã tạo N draft sinh viên` | `H603/H604`; read-only batched preview; no password/internal fields; `getCopyPreview` |
+| `POST /student/copy/validate` | JSON `drafts` | validation payload; `Đã kiểm tra các bản sao sinh viên` | expected `H*` errors; fallback `H600`; `validateCopyDrafts` |
+| `POST /student/copy/commit` | multipart `drafts` JSON plus optional `attachment-<draftKey>` files; draft requires unique `draftKey`, positive `sourceId`, and normalized editable values | `{ created:[{draftKey,record}] }`; `Đã tạo N sinh viên` | malformed/duplicate/class errors map to `H603`; missing source `H604`; fallback `H600`. Uploads are compensated on any failure; DB transaction locks/rechecks source and unique code/email/username then commits all or rolls back; `commitCopyDrafts` |
+| `GET /student/import/template` | optional query `type` | binary template `student-import-template.<ext>` | `400 J601`; fallback `J600`; `buildFile(createTemplateRow())` |
+| `POST /student/import` | multipart `file` | preview `{ rows, lookups }`; `Import preview created without database writes` | `400 J601` unsupported; `400 J604` missing/unreadable/empty; fallback `J600`. Parses rows then calls `validateImportDrafts`; no student write |
+| `POST /student/import/validate` | JSON `drafts` | `{ rows, lookups }`; `Import drafts validated` | unhandled fallback `J600`; validates normalized file values, duplicates, classes and active hobby names without writes |
+| `POST /student/import/commit` | JSON `drafts` | `{ created, updated }`; `Student import committed` | invalid preview -> `400 J604` with invalid rows in `data`; `23505` -> `409 J604` `Duplicate student data`; fallback `J600`. Revalidates inside one transaction before any write; creates by code or updates active match; `commitImportDrafts` |
+| `GET /student/export/:id` | `id` is `parseInt` without validator; query `type` | binary `student-<id>.<ext>` | invalid type `400 K601`; missing `404 K604`; fallback `K600`; `getOneById`, lookup conversion, `buildFile` |
+| `POST /student/export` | JSON nonempty `idlist`, optional `type` | binary `students-export.<ext>` | `400 K601`; fallback `K600`; missing requested ids are omitted by `getManyByIds` |
 
-### Student validation currently enforced by controller
+## Binary format and legacy invariants
 
-- Create requires nonblank `code`, `fullname`, `email`, `username`, and `password`.
-- `code`/`username` max 50; `fullname` max 30 and nonblank; `homecity`/`address` max 100; `hair_color` max 7; email/facebook max 256 with the controller's current regexes.
-- Password must be at least 8 characters and include uppercase, lowercase, digit, and non-alphanumeric character.
-- `hobbies` must be a nonnegative integer and a subset of the active hobby bitmask. Update performs the same checks only for supplied fields.
+`csv` is `text/csv`; `xlsx` is `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`; `json` is `application/json`; `xml` is `application/xml`. Student export/template uses ordered columns `code, fullname, dob, gender, class, email, username, password, homecity, address, hobbies, description, hair_color, facebook`; exported password is always empty.
 
-## Deliberately retained quirks
-
-- All successful non-export controller operations use HTTP 200; creates and deletes do not use 201/204.
-- `parseInt` is used without strict numeric-string validation, so values such as `"1x"` are accepted as `1` where a numeric path/query value is parsed.
-- Class mass-delete reports partially blocked rows as a successful 200 and returns only deleted ids (not `blockedIds`) in `data`.
-- The service response is forwarded as-is. No controller response schema is imposed beyond the common envelope.
+Keep these quirks in the Nest migration: HTTP 200 for creates/deletes; legacy `parseInt` accepts prefixes such as `1x`; Class update silently ignores `code`; permissive list-id arrays are not per-item normalized on several legacy mass endpoints; Class mass delete and legacy mass copy/delete deliberately have partial-success semantics; and document/API strings above, including English messages on Student preview/commit imports, are observable behavior.
