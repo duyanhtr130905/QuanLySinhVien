@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { HttpModule } from './common/http/http.module';
 import appConfig from './config/app.config';
 import { HobbyModule } from './modules/hobby/hobby.module';
+import { ClassModule } from './modules/class/class.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { HobbyModule } from './modules/hobby/hobby.module';
     }),
     HttpModule,
     HobbyModule,
+    ClassModule,
   ],
   controllers: [AppController],
   providers: [AppService],
