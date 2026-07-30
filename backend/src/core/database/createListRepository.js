@@ -68,7 +68,9 @@ const createListRepository = ({
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     // Count and page data are independent reads. Start the count before SQL
     // construction below so a paged list does not pay two network round trips.
-    const countPromise = pool.query(`SELECT COUNT(*) FROM ${tableName} ${whereClause}`, queryParams);
+    // pg may consume values asynchronously. Preserve the count query's
+    // parameter snapshot before the page query appends toplist/limit/offset.
+    const countPromise = pool.query(`SELECT COUNT(*) FROM ${tableName} ${whereClause}`, [...queryParams]);
 
     const orderBy = resolveOrderBy(columnAliases, order) || defaultOrder;
     const pinnedIds = normalizeToplist(toplist);

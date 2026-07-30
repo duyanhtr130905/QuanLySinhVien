@@ -110,3 +110,27 @@ test('list repository can page only deleted students without exposing password c
   assert.doesNotMatch(pool.calls[1][0], /password/);
   assert.match(pool.calls[1][0], /ORDER BY\s+deleted_at DESC/);
 });
+
+test('parallel count keeps an immutable parameter snapshot while page params are appended', async () => {
+  const calls = [];
+  const pool = {
+    query: async (sql, values = []) => {
+      await Promise.resolve();
+      calls.push([sql, [...values]]);
+      return sql.includes('COUNT(*)') ? { rows: [{ count: '1' }] } : { rows: [{ id: 3 }] };
+    },
+  };
+  const repository = createListRepository({
+    pool,
+    tableName: 'tra_student',
+    validColumns: ['id', 'fullname'],
+    defaultColumns: ['id', 'fullname'],
+    columnAliases: { id: 'id' },
+    searchColumns: ['fullname'],
+  });
+  await repository.getByPage({ page: 1, size: 10, search: 'An', toplist: [3] });
+  const countCall = calls.find(([sql]) => sql.includes('COUNT(*)'));
+  const dataCall = calls.find(([sql]) => !sql.includes('COUNT(*)'));
+  assert.deepEqual(countCall[1], ['%An%']);
+  assert.deepEqual(dataCall[1], ['%An%', 3, 10, 0]);
+});
