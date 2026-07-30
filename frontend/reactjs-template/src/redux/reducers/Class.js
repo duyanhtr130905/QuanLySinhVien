@@ -10,6 +10,7 @@ import {
   CLASS_AVAILABLE_STUDENTS_CLEAR, CLASS_AVAILABLE_STUDENTS_SELECTION_SET,
   CLASS_STUDENTS_ADD, CLASS_STUDENTS_ADD_SUCCESS, CLASS_STUDENTS_ADD_FAIL,
   CLASS_STUDENT_REMOVE, CLASS_STUDENT_REMOVE_SUCCESS, CLASS_STUDENT_REMOVE_FAIL,
+  CLASS_STUDENTS_REMOVE_MANY, CLASS_STUDENTS_REMOVE_MANY_SUCCESS, CLASS_STUDENTS_REMOVE_MANY_FAIL,
   CLASS_COPY_ONE, CLASS_COPY_ONE_SUCCESS, CLASS_COPY_ONE_FAIL,
   CLASS_COPY_MANY, CLASS_COPY_MANY_SUCCESS, CLASS_COPY_MANY_FAIL,
   CLASS_IMPORT, CLASS_IMPORT_SUCCESS, CLASS_IMPORT_FAIL, CLASS_IMPORT_CLEAR,
@@ -42,6 +43,8 @@ const initialState = {
   addStudentsError: null,
   removingStudentId: null,
   removeStudentError: null,
+  removeStudentsLoading: false,
+  removeStudentsError: null,
   copyingClassId: null,
   copyManyLoading: false,
   copyResult: null,
@@ -155,6 +158,8 @@ const classroom = (state = initialState, action) => {
         classStudentsError: null,
         removingStudentId: null,
         removeStudentError: null,
+        removeStudentsLoading: false,
+        removeStudentsError: null,
       }
 
     case CLASS_AVAILABLE_STUDENTS_FETCH:
@@ -203,6 +208,13 @@ const classroom = (state = initialState, action) => {
       return { ...state, removingStudentId: null }
     case CLASS_STUDENT_REMOVE_FAIL:
       return { ...state, removingStudentId: null, removeStudentError: action.message }
+
+    case CLASS_STUDENTS_REMOVE_MANY:
+      return { ...state, removeStudentsLoading: true, removeStudentsError: null }
+    case CLASS_STUDENTS_REMOVE_MANY_SUCCESS:
+      return { ...state, removeStudentsLoading: false }
+    case CLASS_STUDENTS_REMOVE_MANY_FAIL:
+      return { ...state, removeStudentsLoading: false, removeStudentsError: action.message }
 
     case CLASS_COPY_ONE:
       return { ...state, copyingClassId: action.id, copyError: null }

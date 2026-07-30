@@ -47,7 +47,7 @@ const createListRepository = ({
     return result.rows.map(rowMapper);
   };
 
-  const getByPage = async ({ page, size, order, search, columnlist, toplist }) => {
+  const getByPage = async ({ page, size, order, search, columnlist, toplist, excludeIds }) => {
     const columns = getColumns(columnlist);
     const queryParams = [];
     const conditions = [...baseConditions];
@@ -58,10 +58,19 @@ const createListRepository = ({
       conditions.push(`(${searchColumns.map((column) => `${column} ILIKE ${parameter}`).join(' OR ')})`);
     }
 
+    const excludedIds = normalizeToplist(excludeIds);
+    if (excludedIds.length) {
+      const placeholders = excludedIds.map((_, index) => `$${queryParams.length + index + 1}`).join(', ');
+      queryParams.push(...excludedIds);
+      conditions.push(`id NOT IN (${placeholders})`);
+    }
+
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const countResult = await pool.query(`SELECT COUNT(*) FROM ${tableName} ${whereClause}`, queryParams);
-    const totalItems = parseInt(countResult.rows[0].count, 10);
-    const totalPages = Math.ceil(totalItems / size);
+    // Count and page data are independent reads. Start the count before SQL
+    // construction below so a paged list does not pay two network round trips.
+    // pg may consume values asynchronously. Preserve the count query's
+    // parameter snapshot before the page query appends toplist/limit/offset.
+    const countPromise = pool.query(`SELECT COUNT(*) FROM ${tableName} ${whereClause}`, [...queryParams]);
 
     const orderBy = resolveOrderBy(columnAliases, order) || defaultOrder;
     const pinnedIds = normalizeToplist(toplist);
@@ -85,7 +94,9 @@ const createListRepository = ({
       ORDER BY ${toplistClause} ${orderBy.replace('ORDER BY ', '')}
       LIMIT ${sizeParameter} OFFSET ${offsetParameter}
     `;
-    const dataResult = await pool.query(dataSql, queryParams);
+    const [countResult, dataResult] = await Promise.all([countPromise, pool.query(dataSql, queryParams)]);
+    const totalItems = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalItems / size);
 
     return {
       page_info: {

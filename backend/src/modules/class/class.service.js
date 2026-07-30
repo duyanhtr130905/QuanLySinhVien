@@ -1,6 +1,6 @@
 const pool = require('../../config/db');
 const createListRepository = require('../../core/database/createListRepository');
-const { generateUniqueValue, runMassCopyTransaction } = require('../../utils/copyHelpers');
+const { generateUniqueValue, getCopyCandidateBatch, runMassCopyTransaction } = require('../../utils/copyHelpers');
 const { resolveColumns, resolveOrderBy } = require('../../utils/queryHelpers');
 const AppError = require('../../core/http/AppError');
 const errors = require('./class.errors');
@@ -312,6 +312,49 @@ const removeStudent = async (classId, studentId) => {
   return { studentId: result.rows[0].id };
 };
 
+const removeStudents = async (classId, studentIds) => {
+  const normalizedClassId = normalizeRequiredId(classId, errors.students.invalidId);
+  const normalizedStudentIds = normalizeStudentIds(studentIds);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const classResult = await client.query('SELECT id FROM tra_class WHERE id = $1 FOR UPDATE', [normalizedClassId]);
+    if (classResult.rows.length === 0) throw new AppError(errors.students.classNotFound);
+
+    const studentsResult = await client.query(
+      'SELECT id, class_id, deleted_at FROM tra_student WHERE id = ANY($1::int[]) FOR UPDATE',
+      [normalizedStudentIds]
+    );
+    const studentsById = new Map(studentsResult.rows.map((student) => [
+      normalizeRequiredId(student.id, errors.students.invalidStudentIds),
+      student,
+    ]));
+    const missingIds = normalizedStudentIds.filter((id) => !studentsById.has(id));
+    if (missingIds.length) throw new AppError({ ...errors.students.studentNotFound, message: `${errors.students.studentNotFound.message}: ${missingIds.join(', ')}` });
+
+    const deletedIds = normalizedStudentIds.filter((id) => studentsById.get(id).deleted_at !== null);
+    if (deletedIds.length) throw new AppError({ ...errors.students.studentDeleted, message: `${errors.students.studentDeleted.message}: ${deletedIds.join(', ')}` });
+
+    const notInClassIds = normalizedStudentIds.filter((id) => (
+      normalizePositiveId(studentsById.get(id).class_id) !== normalizedClassId
+    ));
+    if (notInClassIds.length) throw new AppError({ ...errors.students.studentNotInClass, message: `${errors.students.studentNotInClass.message}: ${notInClassIds.join(', ')}` });
+
+    const result = await client.query(
+      'UPDATE tra_student SET class_id = NULL, updated_at = NOW() WHERE id = ANY($1::int[]) AND class_id = $2 AND deleted_at IS NULL RETURNING id',
+      [normalizedStudentIds, normalizedClassId]
+    );
+    if (result.rows.length !== normalizedStudentIds.length) throw new AppError(errors.students.studentNotInClass);
+    await client.query('COMMIT');
+    return normalizedStudentIds;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 const getManyForExport = async (ids) => {
   const placeholders = ids.map((_, index) => `$${index + 1}`).join(', ');
   const result = await pool.query(
@@ -431,6 +474,140 @@ const copyOneWithClient = async (client, id) => {
  */
 const massCopy = (idlist) => runMassCopyTransaction(pool, copyOneWithClient, idlist);
 
+const getCopyPreview = async (idlist) => {
+  const ids = [...new Set(idlist)];
+  const sourcesResult = await pool.query('SELECT id, code, name, description FROM tra_class WHERE id = ANY($1::int[])', [ids]);
+  const sources = new Map(sourcesResult.rows.map(row => [Number(row.id), row]));
+  const candidateCodes = new Set();
+  sourcesResult.rows.forEach(source => getCopyCandidateBatch('code', source.code, 50).forEach(code => candidateCodes.add(code)));
+  const existingResult = await pool.query('SELECT code FROM tra_class WHERE code = ANY($1::text[])', [[...candidateCodes]]);
+  const occupied = new Set(existingResult.rows.map(row => row.code));
+  const reserved = new Set();
+  const drafts = [];
+  const notFoundIds = [];
+  ids.forEach((id) => {
+    const source = sources.get(Number(id));
+    if (!source) {
+      notFoundIds.push(id);
+      return;
+    }
+    const code = getCopyCandidateBatch('code', source.code, 50).find(candidate => !occupied.has(candidate) && !reserved.has(candidate));
+    if (!code) {
+      const error = new Error('KhÃ´ng thá»ƒ táº¡o mÃ£ lá»›p duy nháº¥t');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    reserved.add(code);
+    drafts.push({ draftKey: `class-${id}`, sourceId: id, values: { code, name: source.name, description: source.description || '' } });
+  });
+  return { drafts, notFoundIds };
+};
+
+const validateCopyDrafts = async (drafts) => {
+  const rows = (Array.isArray(drafts) ? drafts : []).map((draft, index) => {
+    const code = typeof draft?.values?.code === 'string' ? draft.values.code.trim() : '';
+    const name = typeof draft?.values?.name === 'string' ? draft.values.name.trim() : '';
+    const errors = {};
+    if (!draft?.draftKey || typeof draft.draftKey !== 'string') errors.draftKey = `Draft ${index + 1} khÃ´ng há»£p lá»‡`;
+    if (!Number.isSafeInteger(Number(draft?.sourceId)) || Number(draft.sourceId) <= 0) errors.sourceId = 'Báº£n ghi gá»‘c khÃ´ng há»£p lá»‡';
+    if (!code) errors.code = 'MÃ£ lá»›p lÃ  báº¯t buá»™c'; else if (code.length > 50) errors.code = 'MÃ£ lá»›p khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 50 kÃ½ tá»±';
+    if (!name) errors.name = 'TÃªn lá»›p lÃ  báº¯t buá»™c'; else if (name.length > 255) errors.name = 'TÃªn lá»›p khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 255 kÃ½ tá»±';
+    return { draft, code, errors };
+  });
+  const counts = new Map();
+  rows.forEach(row => { if (row.code) counts.set(row.code, (counts.get(row.code) || 0) + 1); });
+  rows.forEach(row => { if (row.code && counts.get(row.code) > 1) row.errors.code = 'MÃ£ lá»›p bá»‹ trÃ¹ng trong cÃ¡c báº£n sao'; });
+  const codes = [...new Set(rows.filter(row => !row.errors.code && row.code).map(row => row.code))];
+  const existingResult = await pool.query('SELECT code FROM tra_class WHERE code = ANY($1::text[])', [codes]);
+  const existingCodes = new Set(existingResult.rows.map(row => row.code));
+  rows.forEach(row => { if (!row.errors.code && existingCodes.has(row.code)) row.errors.code = 'MÃ£ lá»›p Ä‘Ã£ tá»“n táº¡i'; });
+  return { rows: rows.map(row => ({ draftKey: row.draft?.draftKey || '', status: Object.keys(row.errors).length ? 'invalid' : 'valid', errors: row.errors })) };
+};
+
+const commitCopyDrafts = async (drafts) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const codes = drafts.map(draft => draft.values.code);
+    if (new Set(codes).size !== codes.length) {
+      const error = new Error('Mã lớp bị trùng trong các bản sao');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const existing = await client.query('SELECT code FROM tra_class WHERE code = ANY($1)', [codes]);
+    if (existing.rows.length) {
+      const error = new Error('Mã lớp đã tồn tại');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const created = [];
+    for (const draft of drafts) {
+      const source = await client.query('SELECT id FROM tra_class WHERE id = $1 FOR SHARE', [draft.sourceId]);
+      if (!source.rows.length) {
+        const error = new Error(`Không tìm thấy lớp gốc ${draft.sourceId}`);
+        error.code = 'COPY_SOURCE_NOT_FOUND';
+        throw error;
+      }
+      const values = draft.values;
+      const result = await client.query(
+        'INSERT INTO tra_class (code, name, description, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *',
+        [values.code, values.name, values.description || null]
+      );
+      created.push({ draftKey: draft.draftKey, record: result.rows[0] });
+    }
+    await client.query('COMMIT');
+    return { created };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+const commitCopyDraftsBatch = async (drafts) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const codes = drafts.map(draft => draft.values.code);
+    if (new Set(codes).size !== codes.length) {
+      const error = new Error('Duplicate class code in copy drafts');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const [existingResult, sourceResult] = await Promise.all([
+      client.query('SELECT code FROM tra_class WHERE code = ANY($1::text[])', [codes]),
+      client.query('SELECT id FROM tra_class WHERE id = ANY($1::int[]) FOR SHARE', [[...new Set(drafts.map(draft => draft.sourceId))]]),
+    ]);
+    if (existingResult.rows.length) {
+      const error = new Error('Class code already exists');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const sourceIds = new Set(sourceResult.rows.map(row => Number(row.id)));
+    const missingSource = drafts.map(draft => draft.sourceId).find(id => !sourceIds.has(Number(id)));
+    if (missingSource) {
+      const error = new Error(`Source class ${missingSource} was not found`);
+      error.code = 'COPY_SOURCE_NOT_FOUND';
+      throw error;
+    }
+    const result = await client.query(`
+      INSERT INTO tra_class (code, name, description, created_at, updated_at)
+      SELECT code, name, description, NOW(), NOW()
+      FROM UNNEST($1::text[], $2::text[], $3::text[]) AS input(code, name, description)
+      RETURNING *
+    `, [codes, drafts.map(draft => draft.values.name), drafts.map(draft => draft.values.description || null)]);
+    const createdByCode = new Map(result.rows.map(record => [record.code, record]));
+    await client.query('COMMIT');
+    return { created: drafts.map(draft => ({ draftKey: draft.draftKey, record: createdByCode.get(draft.values.code) })) };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   getAll,
   getByPage,
@@ -443,9 +620,13 @@ module.exports = {
   getAvailableStudentsByClass,
   assignStudents,
   removeStudent,
+  removeStudents,
   massDelete,
   copyOne,
   massCopy,
+  getCopyPreview,
+  validateCopyDrafts,
+  commitCopyDrafts: commitCopyDraftsBatch,
   getManyForExport,
   getOneForExport,
 };

@@ -16,13 +16,35 @@ export const trimClassSearch = value => (
   typeof value === 'string' ? value.trim() : ''
 )
 
+export const matchesClassSearch = (record, search) => {
+  const keyword = trimClassSearch(search).toLocaleLowerCase('vi')
+  if (!keyword) return true
+  return ['code', 'name', 'description'].some(field => (
+    String(record?.[field] || '').toLocaleLowerCase('vi').includes(keyword)
+  ))
+}
+
 export const normalizeClassStudentCount = record => Number(record?.student_count || 0)
+
+export const hasClassStudentCountMetadata = record => {
+  if (typeof record?.student_count_known === 'boolean') return record.student_count_known
+  return Object.prototype.hasOwnProperty.call(record || {}, 'student_count')
+    && Number.isFinite(Number(record.student_count))
+}
 
 export const getSelectedClassesWithStudentsCount = (selectedRowKeys, selectedRecordsById) => (
   asArray(selectedRowKeys).filter(id => (
     normalizeClassStudentCount(selectedRecordsById?.[id]) > 0
   )).length
 )
+
+export const getClassBulkDeleteBlockReason = (selectedRowKeys, selectedRecordsById) => {
+  const selected = asArray(selectedRowKeys)
+  if (!selected.length) return 'empty'
+  if (selected.some(id => !hasClassStudentCountMetadata(selectedRecordsById?.[id]))) return 'missing_metadata'
+  if (selected.some(id => normalizeClassStudentCount(selectedRecordsById?.[id]) > 0)) return 'has_students'
+  return null
+}
 
 export const isClassDeleteBlockedError = (error, status) => (
   error?.code === 'G605' || Number(status || error?.response?.status) === 409

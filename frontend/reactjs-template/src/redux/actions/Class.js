@@ -10,6 +10,7 @@ import {
   CLASS_AVAILABLE_STUDENTS_CLEAR, CLASS_AVAILABLE_STUDENTS_SELECTION_SET,
   CLASS_STUDENTS_ADD, CLASS_STUDENTS_ADD_SUCCESS, CLASS_STUDENTS_ADD_FAIL,
   CLASS_STUDENT_REMOVE, CLASS_STUDENT_REMOVE_SUCCESS, CLASS_STUDENT_REMOVE_FAIL,
+  CLASS_STUDENTS_REMOVE_MANY, CLASS_STUDENTS_REMOVE_MANY_SUCCESS, CLASS_STUDENTS_REMOVE_MANY_FAIL,
   CLASS_COPY_ONE, CLASS_COPY_ONE_SUCCESS, CLASS_COPY_ONE_FAIL,
   CLASS_COPY_MANY, CLASS_COPY_MANY_SUCCESS, CLASS_COPY_MANY_FAIL,
   CLASS_IMPORT, CLASS_IMPORT_SUCCESS, CLASS_IMPORT_FAIL, CLASS_IMPORT_CLEAR,
@@ -105,6 +106,16 @@ export const removeStudentFromClass = (classId, studentId, onSuccess, onError) =
 })
 export const removeStudentFromClassSuccess = studentId => ({ type: CLASS_STUDENT_REMOVE_SUCCESS, studentId })
 export const removeStudentFromClassFail = message => ({ type: CLASS_STUDENT_REMOVE_FAIL, message })
+
+export const removeStudentsFromClass = (classId, studentIds, onSuccess, onError) => ({
+  type: CLASS_STUDENTS_REMOVE_MANY,
+  classId,
+  studentIds,
+  onSuccess,
+  onError,
+})
+export const removeStudentsFromClassSuccess = data => ({ type: CLASS_STUDENTS_REMOVE_MANY_SUCCESS, data })
+export const removeStudentsFromClassFail = message => ({ type: CLASS_STUDENTS_REMOVE_MANY_FAIL, message })
 
 export const copyClass = (id, onSuccess, onError) => ({
   type: CLASS_COPY_ONE,

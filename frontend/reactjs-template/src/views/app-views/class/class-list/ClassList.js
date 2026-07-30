@@ -11,17 +11,17 @@ import {
 } from '@ant-design/icons'
 import ColumnChooser from 'components/shared-components/ColumnChooser'
 import DraggableColumnTitle from 'components/shared-components/DraggableColumnTitle'
+import ClassService from 'services/ClassService'
 import {
-  copyClass, copyManyClasses, deleteClass, exportClass, fetchClassList, massDeleteClass,
+  deleteClass, exportClass, fetchClassList, massDeleteClass,
 } from 'redux/actions/Class'
 import {
-  buildDisplayedStudentRecords, getPageScopedSelectionChange,
+  buildDisplayedStudentRecords, getPageScopedSelectionChange, getSelectionAdjustedPagination,
 } from '../../student/studentUtils'
 import {
-  buildClassOrder, normalizeClassCopyResponse, normalizeMassClassCopyResponse,
-  normalizeMassDeleteResponse, rememberCopiedClassId, saveClassCopyResult,
-  getSelectedClassesWithStudentsCount, isClassDeleteBlockedError,
-  normalizeClassStudentCount, trimClassSearch,
+  buildClassOrder, normalizeMassDeleteResponse,
+  getClassBulkDeleteBlockReason, hasClassStudentCountMetadata,
+  isClassDeleteBlockedError, matchesClassSearch, normalizeClassStudentCount, trimClassSearch,
 } from '../classUtils'
 import '../Class.css'
 
@@ -40,8 +40,8 @@ const ClassList = () => {
   const listLoading = useSelector(state => state.classroom.listLoading)
   const listError = useSelector(state => state.classroom.error)
   const massDeleting = useSelector(state => state.classroom.massDeleteLoading)
-  const copyingClassId = useSelector(state => state.classroom.copyingClassId)
-  const copyingMany = useSelector(state => state.classroom.copyManyLoading)
+  const [copyingClassId, setCopyingClassId] = useState(null)
+  const [copyingMany, setCopyingMany] = useState(false)
   const exportingClassId = useSelector(state => state.classroom.exportingClassId)
   const restoredState = location.state?.classListState
   const restoredQuery = restoredState?.query
@@ -109,7 +109,11 @@ const ClassList = () => {
       const next = { ...current }
       apiRecords.forEach(record => {
         if (selectedRowKeys.includes(record.id)) {
-          next[record.id] = { ...record, student_count: normalizeClassStudentCount(record) }
+          next[record.id] = {
+            ...record,
+            student_count: normalizeClassStudentCount(record),
+            student_count_known: hasClassStudentCountMetadata(record),
+          }
         }
       })
       return next
@@ -208,53 +212,45 @@ const ClassList = () => {
     })
   }
 
-  const handleCopyOne = record => {
+  const handleCopyOne = async record => {
     if (copyingClassId !== null) return
-    dispatch(copyClass(record.id, response => {
-      const created = normalizeClassCopyResponse(response)
-      const createdId = Number(created?.id)
-      if (!Number.isSafeInteger(createdId) || createdId <= 0) {
-        throw new Error('Không nhận được ID của bản sao')
-      }
-      rememberCopiedClassId(createdId)
-      message.success('Sao chép lớp thành công')
-      history.push(`/app/class/edit/${createdId}`, {
+    setCopyingClassId(record.id)
+    try {
+      const response = await ClassService.copyPreview([record.id])
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy lớp để sao chép')
+      history.push('/app/class/copy-preview', {
         classListState: getClassListState(),
-        copiedClass: created,
+        preview,
       })
-    }, error => message.error(getErrorMessage(error))))
+    } catch (error) {
+      message.error(getErrorMessage(error))
+    } finally {
+      setCopyingClassId(null)
+    }
   }
 
-  const executeMassCopy = () => new Promise((resolve, reject) => {
-    dispatch(copyManyClasses(selectedRowKeys, response => {
-      const result = normalizeMassClassCopyResponse(response)
-      saveClassCopyResult(result)
-      const listState = {
-        ...getClassListState(),
-        selectedRowKeys: [],
-        selectedRecordsById: {},
-      }
-      updateSelection([])
-      history.push('/app/class/copy-result', {
-        copyResult: result,
-        classListState: listState,
+  const executeMassCopy = async () => {
+    if (!selectedRowKeys.length || copyingMany) return
+    setCopyingMany(true)
+    try {
+      const response = await ClassService.copyPreview(selectedRowKeys)
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy lớp để sao chép')
+      history.push('/app/class/copy-preview', {
+        preview,
+        classListState: getClassListState(),
       })
-      resolve()
-    }, error => {
+    } catch (error) {
       message.error(getErrorMessage(error))
-      reject(error)
-    }))
-  })
+    } finally {
+      setCopyingMany(false)
+    }
+  }
 
   const confirmMassCopy = () => {
     if (!selectedRowKeys.length || copyingMany) return
-    Modal.confirm({
-      title: 'Xác nhận sao chép lớp',
-      content: `Sao chép ${selectedRowKeys.length} lớp đã chọn?`,
-      okText: 'Sao chép',
-      cancelText: 'Hủy',
-      onOk: executeMassCopy,
-    })
+    executeMassCopy()
   }
 
   const handleExportOne = (record, type) => {
@@ -270,7 +266,8 @@ const ClassList = () => {
   }
 
   const executeMassDelete = () => new Promise((resolve, reject) => {
-    if (massDeleting) {
+    if (massDeleting || !canMassDelete) {
+      if (!massDeleting) showMassDeleteBlockedMessage()
       resolve()
       return
     }
@@ -300,21 +297,13 @@ const ClassList = () => {
   })
 
   const confirmMassDelete = () => {
-    if (!selectedRowKeys.length || massDeleting) return
-    const selectedWithStudents = getSelectedClassesWithStudentsCount(
-      selectedRowKeys,
-      selectedRecordsById
-    )
+    if (!canMassDelete) {
+      showMassDeleteBlockedMessage()
+      return
+    }
     Modal.confirm({
       title: 'Xác nhận xóa lớp',
-      content: (
-        <div>
-          <p>Bạn có chắc chắn muốn xóa {selectedRowKeys.length} lớp đã chọn không?</p>
-          {selectedWithStudents > 0 && (
-            <p>{selectedWithStudents} lớp đang có sinh viên sẽ không bị xóa.</p>
-          )}
-        </div>
-      ),
+      content: `Bạn có chắc chắn muốn xóa ${selectedRowKeys.length} lớp đã chọn không?`,
       okText: 'Xóa',
       okType: 'danger',
       cancelText: 'Hủy',
@@ -502,15 +491,42 @@ const ClassList = () => {
   const normalizedApiRecords = useMemo(() => apiRecords.map(record => ({
     ...record,
     student_count: normalizeClassStudentCount(record),
+    student_count_known: hasClassStudentCountMetadata(record),
   })), [apiRecords])
   const displayedRecords = buildDisplayedStudentRecords(
     normalizedApiRecords,
     selectedRowKeys,
-    selectedRecordsById
+    selectedRecordsById,
+    record => record.id,
+    record => matchesClassSearch(record, query.search)
   )
-  const totalItems = Number(pageInfo.total_items) || 0
-  const totalPages = Number(pageInfo.total_pages) || 0
+  const pagination = getSelectionAdjustedPagination({
+    totalItems: pageInfo.total_items,
+    pageSize: query.size,
+    currentPage: query.page,
+    selectedRowKeys,
+    selectedRecordsById,
+    matchesRecord: record => matchesClassSearch(record, query.search),
+  })
+  const totalItems = pagination.totalItems
+  const totalPages = pagination.totalPages
   const hasSelection = selectedRowKeys.length > 0
+  const massDeleteBlockReason = getClassBulkDeleteBlockReason(selectedRowKeys, selectedRecordsById)
+  const canMassDelete = hasSelection && !massDeleting && !massDeleteBlockReason
+  const showMassDeleteBlockedMessage = () => {
+    if (massDeleteBlockReason === 'has_students') {
+      message.warning('Không thể xóa hàng loạt vì lựa chọn có lớp vẫn còn sinh viên.')
+    } else if (massDeleteBlockReason === 'missing_metadata') {
+      message.warning('Không thể xóa hàng loạt vì chưa đủ dữ liệu số sinh viên của các lớp đã chọn.')
+    }
+  }
+
+  useEffect(() => {
+    if (listLoading || Number(pageInfo.current) !== query.page || query.page === pagination.currentPage) return
+    const nextQuery = { ...query, page: pagination.currentPage }
+    setQuery(nextQuery)
+    loadClasses(nextQuery)
+  }, [listLoading, pageInfo.current, pagination.currentPage, query]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const actionMenu = (
     <Menu>
@@ -541,7 +557,7 @@ const ClassList = () => {
         key="delete"
         danger
         icon={<DeleteOutlined />}
-        disabled={!hasSelection || massDeleting}
+        disabled={!canMassDelete}
         onClick={confirmMassDelete}
       >
         Xóa dữ liệu đã chọn
@@ -637,8 +653,8 @@ const ClassList = () => {
           />
           <div className="class-list-pagination">
             <Pagination
-              current={Number(pageInfo.current) || query.page}
-              pageSize={Number(pageInfo.size) || query.size}
+              current={pagination.currentPage}
+              pageSize={query.size}
               total={totalItems}
               showSizeChanger
               showTotal={() => `Tổng ${totalItems} lớp · ${totalPages} trang`}

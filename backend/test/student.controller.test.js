@@ -44,14 +44,47 @@ test('student.getByPage rejects bad paging parameters before service access', as
   assert.equal(called, false);
 });
 
-test('student.getByPage parses toplist and forwards the current service object', async () => {
+test('student.getByPage parses toplist and excluded IDs before forwarding the service object', async () => {
   const calls = [];
   const data = { page_info: { current: 1 }, records: [] };
   const controller = controllerFor({ getByPage: async (...args) => { calls.push(args); return data; } });
   const res = makeRes();
-  await controller.getByPage(makeReq({ query: { page: '1', size: '10', toplist: '2, x, 5', search: 'An' } }), res, makeNext());
+  await controller.getByPage(makeReq({ query: { page: '1', size: '10', toplist: '2, x, 5', exclude_ids: '1, bad, 3x', search: 'An' } }), res, makeNext());
   expectApiResponse(res, 200, '200', 'Lấy danh sách sinh viên theo trang thành công', data);
-  assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: 'An', columnlist: undefined, toplist: [2, 5] }]]);
+  assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: 'An', columnlist: undefined, toplist: [2, 5], excludeIds: [1, 3] }]]);
+});
+
+test('student.getByPage accepts legacy bracket-array exclusion parameters', async () => {
+  const calls = [];
+  const controller = controllerFor({ getByPage: async (...args) => { calls.push(args); return { page_info: {}, records: [] }; } });
+  await controller.getByPage(makeReq({ query: { page: '1', size: '10', 'exclude_ids[]': ['4', 'bad', '6x'] } }), makeRes(), makeNext());
+  assert.deepEqual(calls, [[{ page: 1, size: 10, order: undefined, search: undefined, columnlist: undefined, toplist: [], excludeIds: [4, 6] }]]);
+});
+
+test('student trash endpoints keep page, restore, permanent-delete, and partial-success contracts', async () => {
+  const pageCalls = [];
+  const page = controllerFor({ getDeletedByPage: async (...args) => { pageCalls.push(args); return { page_info: { current: 1 }, records: [{ id: 4, deleted_at: '2026-01-01' }] }; } });
+  const pageRes = makeRes();
+  await page.getDeletedByPage(makeReq({ query: { page: '1', size: '10' } }), pageRes, makeNext());
+  expectApiResponse(pageRes, 200, '200', 'Lấy danh sách sinh viên đã xóa thành công', { page_info: { current: 1 }, records: [{ id: 4, deleted_at: '2026-01-01' }] });
+  assert.deepEqual(pageCalls, [[{ page: 1, size: 10, order: undefined, search: undefined, columnlist: undefined, toplist: [] }]]);
+
+  const restoreCalls = [];
+  const restore = controllerFor({ restoreDeleted: async (...args) => { restoreCalls.push(args); return { restored: [4], notFound: [8], conflicts: [9] }; } });
+  const restoreRes = makeRes();
+  await restore.restoreDeleted(makeReq({ body: { idlist: [4, 8, 9] } }), restoreRes, makeNext());
+  expectApiResponse(restoreRes, 200, '200', 'Đã khôi phục 1 sinh viên', { restored: [4], notFound: [8], conflicts: [9] });
+  assert.deepEqual(restoreCalls, [[[4, 8, 9]]]);
+
+  const deletedAttachments = [];
+  const permanent = controllerFor({
+    permanentlyDelete: async () => ({ deleted: [4], notFound: [8], attachmentsToDelete: ['https://storage/a.png'] }),
+    deleteAttachment: async (url) => { deletedAttachments.push(url); },
+  });
+  const permanentRes = makeRes();
+  await permanent.permanentlyDelete(makeReq({ body: { idlist: [4, 8] } }), permanentRes, makeNext());
+  expectApiResponse(permanentRes, 200, '200', 'Đã xóa vĩnh viễn 1 sinh viên', { deleted: [4], notFound: [8] });
+  assert.deepEqual(deletedAttachments, ['https://storage/a.png']);
 });
 
 test('student.store validates before upload/store while still fetching the active hobby mask', async () => {
@@ -276,31 +309,24 @@ test('student.importStudents reports a missing multipart file without parsing a 
   });
   const res = makeRes();
   await controller.importStudents(makeReq(), res, makeNext());
-  expectApiResponse(res, 400, 'J604', 'Không tìm thấy file upload', null);
+  expectApiResponse(res, 400, 'J604', 'Missing import file', null);
   assert.equal(parsed, false);
 });
 
-test('student.importStudents retains partial-success response semantics', async () => {
-  const storeCalls = [];
+test('student.importStudents creates a preview and never writes students', async () => {
+  let writes = 0;
   const controller = controllerFor({
-    getActiveHobbyMask: async () => 0,
-    store: async (...args) => { storeCalls.push(args); return { id: 11 }; },
+    validateImportDrafts: async drafts => ({ rows: drafts.map(draft => ({ ...draft, mode: 'create', status: 'valid', errors: {}, missingHobbies: [] })) }),
+    store: async () => { writes += 1; },
   }, {
-    parseFile: async () => [
-      { ...validStudent, sex: 'false', hobbies: '0' },
-      { ...validStudent, code: '' },
-    ],
+    parseFile: async () => [{ ...validStudent, gender: 'Nam', hobbies: '' }],
     buildFile: () => { throw new Error('not used'); },
   });
   const res = makeRes();
-  await controller.importStudents(makeReq({
-    file: { originalname: 'students.csv', buffer: Buffer.from('not-read') },
-  }), res, makeNext());
-  expectApiResponse(res, 200, '200', 'Import thành công 1 dòng, lỗi 1 dòng', {
-    created: [{ id: 11 }],
-    failed: [{ row: 3, reason: 'code là bắt buộc' }],
-  });
-  assert.deepEqual(storeCalls, [[{ ...validStudent, sex: false, hobbies: 0 }]]);
+  await controller.importStudents(makeReq({ file: { originalname: 'students.csv', buffer: Buffer.from('not-read') } }), res, makeNext());
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.data.rows.length, 1);
+  assert.equal(writes, 0);
 });
 
 test('student.exportOne uses the requested format contract without a real file', async () => {
@@ -309,6 +335,7 @@ test('student.exportOne uses the requested format contract without a real file',
   const output = Buffer.from('[]');
   const controller = controllerFor({
     getOneById: async (...args) => { serviceCalls.push(args); return { id: 4, fullname: 'A' }; },
+    getFileLookups: async () => ({ classes: [], hobbies: [] }),
   }, {
     parseFile: async () => [],
     buildFile: (...args) => { buildCalls.push(args); return { buffer: output, contentType: 'application/json', extension: 'json' }; },
@@ -316,7 +343,8 @@ test('student.exportOne uses the requested format contract without a real file',
   const res = makeRes();
   await controller.exportOne(makeReq({ params: { id: '4' }, query: { type: 'json' } }), res, makeNext());
   assert.deepEqual(serviceCalls, [[4]]);
-  assert.deepEqual(buildCalls, [[[{ id: 4, fullname: 'A' }], 'json']]);
+  assert.equal(buildCalls[0][1], 'json');
+  assert.equal(buildCalls[0][2].includes('password'), true);
   assert.equal(res.headers['Content-Type'], 'application/json');
   assert.equal(res.headers['Content-Disposition'], 'attachment; filename="student-4.json"');
   assert.equal(res.sent, output);
@@ -327,6 +355,7 @@ test('student.massExport forwards idlist and writes the export response headers'
   const output = Buffer.from('id,fullname');
   const controller = controllerFor({
     getManyByIds: async (...args) => { serviceCalls.push(args); return [{ id: 4 }]; },
+    getFileLookups: async () => ({ classes: [], hobbies: [] }),
   }, {
     parseFile: async () => [],
     buildFile: () => ({ buffer: output, contentType: 'text/csv', extension: 'csv' }),
@@ -337,4 +366,35 @@ test('student.massExport forwards idlist and writes the export response headers'
   assert.equal(res.headers['Content-Type'], 'text/csv');
   assert.equal(res.headers['Content-Disposition'], 'attachment; filename="students-export.csv"');
   assert.equal(res.sent, output);
+});
+
+test('student.copyValidate submits all drafts to one batch validation service call', async () => {
+  const calls = [];
+  const drafts = [{ draftKey: 'student-1', sourceId: 1, values: { code: 'SV01-copy' } }, { draftKey: 'student-2', sourceId: 2, values: { code: 'SV01-copy' } }];
+  const controller = controllerFor({ validateCopyDrafts: async (...args) => { calls.push(args); return { rows: [{ draftKey: 'student-1', status: 'invalid', errors: { code: 'duplicate' } }] }; } });
+  const res = makeRes();
+  await controller.copyValidate(makeReq({ body: { drafts } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao sinh viÃªn', { rows: [{ draftKey: 'student-1', status: 'invalid', errors: { code: 'duplicate' } }] });
+  assert.deepEqual(calls, [[drafts]]);
+});
+
+test('student copy preview is read-only and commit forwards validated drafts', async () => {
+  const previewCalls = [];
+  const commitCalls = [];
+  const controller = controllerFor({
+    getCopyPreview: async (...args) => { previewCalls.push(args); return { drafts: [{ draftKey: 'student-4' }], notFoundIds: [] }; },
+    getActiveHobbyMask: async () => 0,
+    commitCopyDrafts: async (...args) => { commitCalls.push(args); return { created: [{ draftKey: 'student-4', record: { id: 9 } }] }; },
+  });
+  const previewRes = makeRes();
+  await controller.copyPreview(makeReq({ body: { idlist: [4] } }), previewRes, makeNext());
+  assert.deepEqual(previewCalls, [[[4]]]);
+  assert.equal(previewRes.body.data.drafts[0].draftKey, 'student-4');
+
+  const draft = { draftKey: 'student-4', sourceId: 4, values: { ...validStudent, hobbies: 0 } };
+  const commitRes = makeRes();
+  await controller.copyCommit(makeReq({ body: { drafts: [draft] } }), commitRes, makeNext());
+  assert.equal(commitCalls.length, 1);
+  assert.equal(commitCalls[0][0][0].values.password, undefined);
+  assert.equal(commitRes.body.data.created[0].record.id, 9);
 });

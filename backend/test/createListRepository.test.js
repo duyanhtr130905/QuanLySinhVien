@@ -71,3 +71,66 @@ test('list repository applies student soft-delete base filter without exposing p
   assert.match(pool.calls[1][0], /WHERE deleted_at IS NULL/);
   assert.doesNotMatch(pool.calls[1][0], /password/);
 });
+
+test('list repository excludes selected IDs before it counts and pages records', async () => {
+  const pool = createPool([{ rows: [{ count: '12' }] }, { rows: [{ id: 11 }] }]);
+  const repository = createListRepository({
+    pool,
+    tableName: 'tra_student',
+    validColumns: ['id', 'fullname'],
+    defaultColumns: ['id', 'fullname'],
+    columnAliases: { id: 'id' },
+    searchColumns: ['fullname'],
+  });
+  const page = await repository.getByPage({
+    page: 1, size: 10, excludeIds: [2, 5, 8],
+  });
+  assert.deepEqual(page.page_info, { total_items: 12, total_pages: 2, current: 1, size: 10 });
+  assert.match(pool.calls[0][0], /WHERE id NOT IN \(\$1, \$2, \$3\)/);
+  assert.deepEqual(pool.calls[0][1], [2, 5, 8]);
+  assert.match(pool.calls[1][0], /WHERE id NOT IN \(\$1, \$2, \$3\)/);
+  assert.deepEqual(pool.calls[1][1], [2, 5, 8, 10, 0]);
+});
+
+test('list repository can page only deleted students without exposing password columns', async () => {
+  const pool = createPool([{ rows: [{ count: '1' }] }, { rows: [{ id: 8, deleted_at: '2026-01-01' }] }]);
+  const repository = createListRepository({
+    pool,
+    tableName: 'tra_student',
+    validColumns: ['id', 'fullname', 'email', 'deleted_at'],
+    defaultColumns: ['id', 'fullname', 'email', 'deleted_at'],
+    columnAliases: { fn: 'fullname', da: 'deleted_at' },
+    searchColumns: ['fullname', 'email'],
+    deletedFilter: 'deleted_at IS NOT NULL',
+    defaultOrder: 'ORDER BY deleted_at DESC, id DESC',
+  });
+  const page = await repository.getByPage({ page: 1, size: 10, order: 'da:1', search: undefined, columnlist: undefined, toplist: [] });
+  assert.deepEqual(page.records, [{ id: 8, deleted_at: '2026-01-01' }]);
+  assert.match(pool.calls[0][0], /WHERE deleted_at IS NOT NULL/);
+  assert.doesNotMatch(pool.calls[1][0], /password/);
+  assert.match(pool.calls[1][0], /ORDER BY\s+deleted_at DESC/);
+});
+
+test('parallel count keeps an immutable parameter snapshot while page params are appended', async () => {
+  const calls = [];
+  const pool = {
+    query: async (sql, values = []) => {
+      await Promise.resolve();
+      calls.push([sql, [...values]]);
+      return sql.includes('COUNT(*)') ? { rows: [{ count: '1' }] } : { rows: [{ id: 3 }] };
+    },
+  };
+  const repository = createListRepository({
+    pool,
+    tableName: 'tra_student',
+    validColumns: ['id', 'fullname'],
+    defaultColumns: ['id', 'fullname'],
+    columnAliases: { id: 'id' },
+    searchColumns: ['fullname'],
+  });
+  await repository.getByPage({ page: 1, size: 10, search: 'An', toplist: [3] });
+  const countCall = calls.find(([sql]) => sql.includes('COUNT(*)'));
+  const dataCall = calls.find(([sql]) => !sql.includes('COUNT(*)'));
+  assert.deepEqual(countCall[1], ['%An%']);
+  assert.deepEqual(dataCall[1], ['%An%', 3, 10, 0]);
+});

@@ -54,6 +54,22 @@ describe('ClassService backend contracts', () => {
     })
   })
 
+  test('uses preview and explicit commit endpoints for draft copies', () => {
+    const drafts = [{ draftKey: 'class-1', sourceId: 1, values: { code: 'C1-copy', name: 'A' } }]
+    ClassService.copyPreview([1, 2])
+    ClassService.validateCopyDrafts(drafts)
+    ClassService.commitCopyDrafts(drafts)
+    expect(fetch).toHaveBeenNthCalledWith(1, {
+      url: '/class/copy/preview', method: 'post', data: { idlist: [1, 2] },
+    })
+    expect(fetch).toHaveBeenNthCalledWith(2, {
+      url: '/class/copy/validate', method: 'post', data: { drafts },
+    })
+    expect(fetch).toHaveBeenNthCalledWith(3, {
+      url: '/class/copy/commit', method: 'post', data: { drafts },
+    })
+  })
+
   test('loads edit data from GET /class/:id', () => {
     ClassService.getById(2)
     expect(fetch).toHaveBeenCalledWith({
@@ -68,6 +84,7 @@ describe('ClassService backend contracts', () => {
     ClassService.getAvailableStudents(7, params)
     ClassService.addStudentsToClass(7, [3, 4])
     ClassService.removeStudentFromClass(7, 3)
+    ClassService.removeStudentsFromClass(7, [3, 4])
     expect(fetch).toHaveBeenNthCalledWith(1, {
       url: '/class/7/students', method: 'get', params,
     })
@@ -79,6 +96,9 @@ describe('ClassService backend contracts', () => {
     })
     expect(fetch).toHaveBeenNthCalledWith(4, {
       url: '/class/7/students/3', method: 'delete',
+    })
+    expect(fetch).toHaveBeenNthCalledWith(5, {
+      url: '/class/7/students/remove', method: 'patch', data: { studentIds: [3, 4] },
     })
     expect(fetch).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/student/3', method: 'delete' }))
   })

@@ -21,15 +21,18 @@ import { deleteStudent, fetchStudentList } from 'redux/actions/Student'
 import { decodeHobbyBitmask } from '../student-create/studentFormUtils'
 import {
   buildDisplayedStudentRecords, buildStudentOrder, formatStudentDate as formatDate,
-  getPageScopedSelectionChange, getSafeHttpUrl, getStudentSortOrder
+  buildStudentPageParams, getPageScopedSelectionChange, getSafeHttpUrl,
+  getStudentRowKey, getStudentSortOrder, matchesStudentSearch, normalizeStudentRowKeys, toStudentApiIds
 } from '../studentUtils'
-import {
-  getCopyErrorMessage, normalizeMassCopyResponse, rememberCopiedStudentId,
-  saveCopyResultSession, unwrapCopiedStudent
-} from '../student-copy/copyUtils'
+import { getCopyErrorMessage } from '../student-copy/copyUtils'
 
 const { Search } = Input
 const getCount = value => Array.isArray(value) ? value.length : Number(value) || 0
+const normalizeSelectedRecordsById = value => Object.values(value || {}).reduce((records, record) => {
+  const key = getStudentRowKey(record)
+  if (key) records[key] = record
+  return records
+}, {})
 
 const StudentList = () => {
   const dispatch = useDispatch()
@@ -50,31 +53,20 @@ const StudentList = () => {
   const [hobbyMap, setHobbyMap] = useState({})
   const [query, setQuery] = useState(initialQuery)
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => (
-    Array.isArray(restoredListState?.selectedRowKeys)
-      ? [...new Set(restoredListState.selectedRowKeys
-        .map(Number)
-        .filter(id => Number.isSafeInteger(id) && id > 0))]
-      : []
+    normalizeStudentRowKeys(restoredListState?.selectedRowKeys)
   ))
   const [selectedRecordsById, setSelectedRecordsById] = useState(() => (
     restoredListState?.selectedRecordsById && typeof restoredListState.selectedRecordsById === 'object'
-      ? restoredListState.selectedRecordsById
+      ? normalizeSelectedRecordsById(restoredListState.selectedRecordsById)
       : {}
   ))
   const [columnChooserVisible, setColumnChooserVisible] = useState(false)
   const [copyingStudentId, setCopyingStudentId] = useState(null)
   const [exportingStudentId, setExportingStudentId] = useState(null)
-  const [bulkCopyVisible, setBulkCopyVisible] = useState(false)
   const [copyingMany, setCopyingMany] = useState(false)
 
-  const loadStudents = (nextQuery = query) => {
-    const params = {
-      page: nextQuery.page,
-      size: nextQuery.size,
-      search: nextQuery.search,
-      order: nextQuery.order || undefined,
-    }
-    dispatch(fetchStudentList(params))
+  const loadStudents = (nextQuery = query, nextSelectedRowKeys = selectedRowKeys) => {
+    dispatch(fetchStudentList(buildStudentPageParams(nextQuery, nextSelectedRowKeys)))
   }
 
   useEffect(() => {
@@ -111,8 +103,10 @@ const StudentList = () => {
     if (!selectedRowKeys.length || !apiRecords.length) return
     setSelectedRecordsById(current => {
       const next = { ...current }
+      const selectedKeySet = new Set(selectedRowKeys)
       apiRecords.forEach(record => {
-        if (selectedRowKeys.includes(record.id)) next[record.id] = record
+        const key = getStudentRowKey(record)
+        if (selectedKeySet.has(key)) next[key] = record
       })
       return next
     })
@@ -244,14 +238,18 @@ const StudentList = () => {
   const openStudentEdit = id => openStudentPage(`/app/student/edit/${id}`)
   const openStudentImport = () => openStudentPage('/app/student/import')
   const openStudentExport = () => openStudentPage('/app/student/export')
+  const openStudentDeleted = () => openStudentPage('/app/student/deleted')
 
   const orderedColumnConfig = useMemo(() => columnOrder
     .map(key => columnConfig.find(column => column.key === key))
     .filter(Boolean), [columnOrder, classMap, hobbyMap, query.order]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayedRecords = useMemo(() => {
-    return buildDisplayedStudentRecords(apiRecords, selectedRowKeys, selectedRecordsById)
-  }, [apiRecords, selectedRecordsById, selectedRowKeys])
+    return buildDisplayedStudentRecords(
+      apiRecords, selectedRowKeys, selectedRecordsById, getStudentRowKey,
+      record => matchesStudentSearch(record, query.search)
+    )
+  }, [apiRecords, query.search, selectedRecordsById, selectedRowKeys])
   const totalItems = Number(pageInfo.total_items) || 0
   const totalPages = Math.max(1, Number(pageInfo.total_pages) || Math.ceil(totalItems / query.size))
 
@@ -309,7 +307,8 @@ const StudentList = () => {
     })
 
   const updateSelection = (keys, records = []) => {
-    const uniqueKeys = Array.from(new Set(keys))
+    const uniqueKeys = normalizeStudentRowKeys(keys)
+    const keySet = new Set(uniqueKeys)
     setSelectedRowKeys(uniqueKeys)
     setSelectedRecordsById(current => {
       const next = {}
@@ -317,17 +316,20 @@ const StudentList = () => {
         if (current[key]) next[key] = current[key]
       })
       records.forEach(record => {
-        if (uniqueKeys.includes(record.id)) next[record.id] = record
+        const key = getStudentRowKey(record)
+        if (keySet.has(key)) next[key] = record
       })
       return next
     })
   }
 
   const handleRowSelect = (record, selected) => {
+    const key = getStudentRowKey(record)
     const keys = selected
-      ? [...selectedRowKeys, record.id]
-      : selectedRowKeys.filter(key => key !== record.id)
+      ? [...selectedRowKeys, key]
+      : selectedRowKeys.filter(item => item !== key)
     updateSelection(keys, selected ? [record] : [])
+    loadStudents(query, keys)
   }
 
   const handleSelectAll = (selected, _, changeRows) => {
@@ -336,8 +338,10 @@ const StudentList = () => {
       changeRows,
       selected,
       selectedRowKeys,
+      getRecordKey: getStudentRowKey,
     })
     updateSelection(change.keys, change.records)
+    loadStudents(query, change.keys)
   }
 
   const handleSearch = value => {
@@ -373,17 +377,12 @@ const StudentList = () => {
     if (copyingStudentId !== null) return
     setCopyingStudentId(id)
     try {
-      const response = await StudentService.copyOne(id)
-      const created = unwrapCopiedStudent(response)
-      const newId = Number(created?.id)
-      if (!Number.isSafeInteger(newId) || newId <= 0) {
-        throw new Error('Không nhận được ID của bản sao.')
-      }
-      rememberCopiedStudentId(newId)
-      message.success('Sao chép sinh viên thành công')
-      history.push(`/app/student/copy/${newId}`, {
+      const response = await StudentService.copyPreview([id])
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy sinh viên để sao chép')
+      history.push('/app/student/copy-preview', {
+        preview,
         studentListState: getStudentListState(),
-        copiedStudent: created,
       })
     } catch (error) {
       message.error(getCopyErrorMessage(error))
@@ -455,14 +454,14 @@ const StudentList = () => {
     dispatch(deleteStudent(
       record.id,
       () => {
-        const nextKeys = selectedRowKeys.filter(key => key !== record.id)
+        const nextKeys = selectedRowKeys.filter(key => key !== getStudentRowKey(record))
         const nextTotal = Math.max(0, totalItems - 1)
         const nextLastPage = Math.max(1, Math.ceil(nextTotal / query.size))
         const nextQuery = { ...query, page: Math.min(query.page, nextLastPage) }
 
         updateSelection(nextKeys)
         setQuery(nextQuery)
-        loadStudents(nextQuery)
+        loadStudents(nextQuery, nextKeys)
         message.success('Xóa sinh viên thành công')
         resolve()
       },
@@ -489,26 +488,19 @@ const StudentList = () => {
 
   const handleBulkCopy = () => {
     if (!hasSelection || copyingMany) return
-    setBulkCopyVisible(true)
+    executeBulkCopy()
   }
 
   const executeBulkCopy = async () => {
     if (!hasSelection || copyingMany) return
     setCopyingMany(true)
     try {
-      const response = await StudentService.massCopy(selectedRowKeys)
-      const copyResult = normalizeMassCopyResponse(response)
-      const clearedListState = {
-        ...getStudentListState(),
-        selectedRowKeys: [],
-        selectedRecordsById: {},
-      }
-      saveCopyResultSession(copyResult)
-      updateSelection([])
-      setBulkCopyVisible(false)
-      history.push('/app/student/copy-result', {
-        copyResult,
-        studentListState: clearedListState,
+      const response = await StudentService.copyPreview(toStudentApiIds(selectedRowKeys))
+      const preview = response?.data || response
+      if (!preview?.drafts?.length) throw new Error('Không tìm thấy sinh viên để sao chép')
+      history.push('/app/student/copy-preview', {
+        preview,
+        studentListState: getStudentListState(),
       })
     } catch (error) {
       message.error(getCopyErrorMessage(error))
@@ -519,21 +511,22 @@ const StudentList = () => {
 
   const executeBulkDelete = async () => {
     try {
-      const response = await StudentService.massDestroy(selectedRowKeys)
+      const response = await StudentService.massDestroy(toStudentApiIds(selectedRowKeys))
       const result = response?.data || {}
       const notFoundCount = getCount(result.notFound)
       const deletedCount = result.deleted === undefined ? selectedRowKeys.length - notFoundCount : getCount(result.deleted)
-      const deletedIds = Array.isArray(result.deleted)
-        ? result.deleted.map(item => typeof item === 'object' ? item.id : item)
+      const deletedKeys = Array.isArray(result.deleted)
+        ? normalizeStudentRowKeys(result.deleted)
         : deletedCount === selectedRowKeys.length ? selectedRowKeys : []
       if (deletedCount > 0) message.success(`Đã xóa ${deletedCount} sinh viên`)
       if (notFoundCount > 0) message.warning(`${notFoundCount} sinh viên không tìm thấy hoặc không thể xóa`)
       if (deletedCount === 0) message.warning('Không có sinh viên nào được xóa')
-      const remainingKeys = deletedIds.length
-        ? selectedRowKeys.filter(key => !deletedIds.includes(key))
+      const deletedKeySet = new Set(deletedKeys)
+      const remainingKeys = deletedKeys.length
+        ? selectedRowKeys.filter(key => !deletedKeySet.has(key))
         : selectedRowKeys
       updateSelection(remainingKeys)
-      loadStudents()
+      loadStudents(query, remainingKeys)
     } catch (error) {
       message.error(error.response?.data?.message || 'Lỗi xóa sinh viên')
       return Promise.reject(error)
@@ -568,6 +561,7 @@ const StudentList = () => {
       <Menu.Item key="export" icon={<DownloadOutlined />} onClick={openStudentExport}>Xuất dữ liệu theo mẫu</Menu.Item>
       <Menu.Item key="copy" icon={<CopyOutlined />} disabled={!hasSelection || copyingMany} onClick={handleBulkCopy}>Sao chép dữ liệu đã chọn</Menu.Item>
       <Menu.Divider />
+      <Menu.Item key="deleted" icon={<DeleteOutlined />} onClick={openStudentDeleted}>Xem dữ liệu đã xóa</Menu.Item>
       <Menu.Item key="delete" icon={<DeleteOutlined />} danger disabled={!hasSelection} onClick={confirmBulkDelete}>Xóa dữ liệu đã chọn</Menu.Item>
     </Menu>
   )
@@ -589,12 +583,12 @@ const StudentList = () => {
             <Button type="primary" shape="circle" icon={<PlusOutlined />} onClick={() => history.push('/app/student/create')} />
           </div>
         </div>
-        {hasSelection && <div className="student-selection-summary">Đã chọn: {selectedRowKeys.length} sinh viên <Button type="link" size="small" onClick={() => updateSelection([])}>Bỏ chọn tất cả</Button></div>}
+        {hasSelection && <div className="student-selection-summary">Đã chọn: {selectedRowKeys.length} sinh viên <Button type="link" size="small" onClick={() => { updateSelection([]); loadStudents(query, []) }}>Bỏ chọn tất cả</Button></div>}
         <Card bodyStyle={{ padding: 0 }}>
           <Table
             columns={tableColumns}
             dataSource={displayedRecords}
-            rowKey="id"
+            rowKey={getStudentRowKey}
             loading={listLoading}
             scroll={{ x: 'max-content' }}
             rowSelection={{ selectedRowKeys, preserveSelectedRowKeys: true, onSelect: handleRowSelect, onSelectAll: handleSelectAll }}
@@ -604,7 +598,7 @@ const StudentList = () => {
           <div className="student-list-pagination" style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', padding: 16 }}>
             <Pagination
               current={Number(pageInfo.current) || query.page}
-              pageSize={Number(pageInfo.size) || query.size}
+              pageSize={query.size}
               total={totalItems}
               showSizeChanger
               showTotal={() => `Tổng ${totalItems} sinh viên · ${totalPages} trang`}
@@ -612,19 +606,6 @@ const StudentList = () => {
             />
           </div>
         </Card>
-        <Modal
-          visible={bulkCopyVisible}
-          title="Xác nhận sao chép sinh viên"
-          okText="Sao chép"
-          cancelText="Hủy"
-          confirmLoading={copyingMany}
-          closable={!copyingMany}
-          maskClosable={!copyingMany}
-          onOk={executeBulkCopy}
-          onCancel={() => !copyingMany && setBulkCopyVisible(false)}
-        >
-          Sao chép {selectedRowKeys.length} sinh viên đã chọn?
-        </Modal>
       </div>
   )
 }

@@ -1,7 +1,7 @@
 import React from 'react'
 import { Provider } from 'react-redux'
 import { createStore } from 'redux'
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Router } from 'react-router-dom'
 import { createMemoryHistory } from 'history'
 import ClassList from './ClassList'
@@ -45,7 +45,7 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 })
 
-const renderList = (classroom = {}) => {
+const renderList = (classroom = {}, classListState) => {
   const store = createStore(state => state, {
     classroom: {
       list: [],
@@ -55,7 +55,9 @@ const renderList = (classroom = {}) => {
       ...classroom,
     },
   })
-  const history = createMemoryHistory({ initialEntries: ['/app/class/list'] })
+  const history = createMemoryHistory({
+    initialEntries: [{ pathname: '/app/class/list', state: classListState ? { classListState } : undefined }],
+  })
   return render(
     <Provider store={store}>
       <Router history={history}>
@@ -75,5 +77,23 @@ describe('ClassList', () => {
     expect(screen.getByText('Số sinh viên')).toBeTruthy()
     expect(screen.getByText('3')).toBeTruthy()
     expect(screen.getByLabelText('Xóa lớp CNTT 42').disabled).toBe(true)
+  })
+
+  test('disables bulk deletion when a selected class still has students', async () => {
+    renderList({
+      list: [{ id: 7, code: 'CTK42', name: 'CNTT 42', description: '', student_count: 3 }],
+      pageInfo: { total_items: 1, total_pages: 1, current: 1, size: 10 },
+    }, {
+      selectedRowKeys: [7],
+      selectedRecordsById: { 7: { id: 7, student_count: 3 } },
+    })
+
+    const actionButton = screen.getAllByText('Hành động').find(element => element.closest('button'))
+    await act(async () => {
+      fireEvent.click(actionButton)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Xóa dữ liệu đã chọn').closest('li').className).toContain('disabled')
+    })
   })
 })

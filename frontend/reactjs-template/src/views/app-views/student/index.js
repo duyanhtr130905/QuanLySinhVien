@@ -5,19 +5,26 @@ import StudentCreate from './student-create/StudentCreate';
 import StudentDetail from './student-detail';
 import StudentEdit from './student-edit';
 import StudentImport from './student-import';
+import StudentImportPreview from './student-import/StudentImportPreview';
 import StudentExport from './student-export/StudentExport';
 import StudentCopy from './student-copy/StudentCopy';
 import StudentCopyResult from './student-copy/StudentCopyResult';
+import StudentDeletedList from './student-deleted-list/StudentDeletedList';
+import CopyPreviewPage from '../copy-preview/CopyPreviewPage';
+import StudentService from 'services/StudentService';
 
 const Student = ({ match }) => {
 	return (
 		<Switch>
 			<Redirect exact from={`${match.url}`} to={`${match.url}/list`} />
 			<Route path={`${match.url}/create`} component={StudentCreate} />
+			<Route path={`${match.url}/deleted`} component={StudentDeletedList} />
 			<Route path={`${match.url}/edit/:id`} component={StudentEdit} />
+			<Route path={`${match.url}/import-preview`} component={StudentImportPreview} />
 			<Route path={`${match.url}/import`} component={StudentImport} />
 			<Route path={`${match.url}/export`} component={StudentExport} />
 			<Route path={`${match.url}/copy-result`} component={StudentCopyResult} />
+			<Route path={`${match.url}/copy-preview`} render={() => <CopyPreviewPage entity="student" service={StudentService} />} />
 			<Route path={`${match.url}/copy/:id`} component={StudentCopy} />
 			<Route path={`${match.url}/detail/:id`} component={StudentDetail} />
 			<Route path={`${match.url}/list`} component={StudentList} />

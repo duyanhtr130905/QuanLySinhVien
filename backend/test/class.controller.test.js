@@ -97,6 +97,16 @@ test('class.massDelete keeps a partial delete as a 200 response', async () => {
   assert.deepEqual(calls, [[[1, 2, 3]]]);
 });
 
+test('class.copyValidate submits all drafts to one batch validation service call', async () => {
+  const calls = [];
+  const drafts = [{ draftKey: 'class-1', sourceId: 1, values: { code: 'C01-copy', name: 'A' } }, { draftKey: 'class-2', sourceId: 2, values: { code: 'C01-copy', name: '' } }];
+  const controller = controllerFor({ validateCopyDrafts: async (...args) => { calls.push(args); return { rows: [{ draftKey: 'class-1', status: 'invalid', errors: { code: 'duplicate' } }] }; } });
+  const res = makeRes();
+  await controller.copyValidate(makeReq({ body: { drafts } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao lá»›p', { rows: [{ draftKey: 'class-1', status: 'invalid', errors: { code: 'duplicate' } }] });
+  assert.deepEqual(calls, [[drafts]]);
+});
+
 test('class.copyOne reports the copied record and forwards a numeric id', async () => {
   const calls = [];
   const controller = controllerFor({ copyOne: async (...args) => { calls.push(args); return { id: 8, code: 'C01-copy' }; } });
@@ -113,4 +123,21 @@ test('class.massCopy preserves partial-copy success and its service arguments', 
   await controller.massCopy(makeReq({ body: { idlist: [4, 99] } }), res, makeNext());
   expectApiResponse(res, 200, '200', 'Đã sao chép 1 lớp. Không tìm thấy ids: 99', [{ id: 8 }]);
   assert.deepEqual(calls, [[[4, 99]]]);
+});
+
+test('class copy preview and commit use drafts instead of direct copy writes', async () => {
+  const previewCalls = [];
+  const commitCalls = [];
+  const controller = controllerFor({
+    getCopyPreview: async (...args) => { previewCalls.push(args); return { drafts: [{ draftKey: 'class-4' }], notFoundIds: [] }; },
+    commitCopyDrafts: async (...args) => { commitCalls.push(args); return { created: [{ draftKey: 'class-4', record: { id: 9 } }] }; },
+  });
+  const previewRes = makeRes();
+  await controller.copyPreview(makeReq({ body: { idlist: [4] } }), previewRes, makeNext());
+  assert.deepEqual(previewCalls, [[[4]]]);
+
+  const commitRes = makeRes();
+  await controller.copyCommit(makeReq({ body: { drafts: [{ draftKey: 'class-4', sourceId: 4, values: { code: 'C-copy', name: 'Class' } }] } }), commitRes, makeNext());
+  assert.equal(commitCalls.length, 1);
+  assert.equal(commitRes.body.data.created[0].record.id, 9);
 });

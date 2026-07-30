@@ -54,7 +54,7 @@ const parseFile = async (buffer, extension) => {
  * @param {string} format - 'csv'|'xlsx'|'json'|'xml'
  * @returns {{ buffer: Buffer, contentType: string, extension: string }}
  */
-const buildFile = (rows, format) => {
+const buildFile = (rows, format, columns) => {
   const fmt = format.toLowerCase();
   if (!SUPPORTED_FORMATS.includes(fmt)) {
     throw new Error('UNSUPPORTED_FORMAT');
@@ -62,11 +62,11 @@ const buildFile = (rows, format) => {
 
   switch (fmt) {
     case 'csv': {
-      const csv = csvStringify(rows, { header: true });
+      const csv = csvStringify(rows, { header: true, columns });
       return { buffer: Buffer.from(csv), contentType: 'text/csv', extension: 'csv' };
     }
     case 'xlsx': {
-      const sheet = XLSX.utils.json_to_sheet(rows);
+      const sheet = XLSX.utils.json_to_sheet(rows, { header: columns });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, sheet, 'Students');
       const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });

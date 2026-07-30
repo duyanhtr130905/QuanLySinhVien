@@ -71,6 +71,30 @@ ClassService.massCopy = function (idlist) {
   })
 }
 
+ClassService.copyPreview = function (idlist) {
+  return fetch({
+    url: '/class/copy/preview',
+    method: 'post',
+    data: { idlist },
+  })
+}
+
+ClassService.validateCopyDrafts = function (drafts) {
+  return fetch({
+    url: '/class/copy/validate',
+    method: 'post',
+    data: { drafts },
+  })
+}
+
+ClassService.commitCopyDrafts = function (drafts) {
+  return fetch({
+    url: '/class/copy/commit',
+    method: 'post',
+    data: { drafts },
+  })
+}
+
 // Kept as an alias for older Class screens while new flows use the explicit name.
 ClassService.copyMany = ClassService.massCopy
 
@@ -130,6 +154,14 @@ ClassService.removeStudentFromClass = function (classId, studentId) {
   return fetch({
     url: `/class/${classId}/students/${studentId}`,
     method: 'delete',
+  })
+}
+
+ClassService.removeStudentsFromClass = function (classId, studentIds) {
+  return fetch({
+    url: `/class/${classId}/students/remove`,
+    method: 'patch',
+    data: { studentIds },
   })
 }
 

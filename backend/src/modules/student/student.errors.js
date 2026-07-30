@@ -33,6 +33,9 @@ const studentErrors = Object.freeze({
     notFound: createErrorConfig(404, 'G604', 'Không tìm thấy sinh viên'),
     massNotFound: createErrorConfig(404, 'G604', 'Không tìm thấy các sinh viên'),
   }),
+  trash: Object.freeze({
+    invalidIdList: createErrorConfig(400, 'L603', 'idlist kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c r\u1ed7ng'),
+  }),
   copy: Object.freeze({
     invalidId: createErrorConfig(400, 'H601', 'id không hợp lệ'),
     invalidIdList: createErrorConfig(400, 'H603', 'idlist không hợp lệ hoặc rỗng'),

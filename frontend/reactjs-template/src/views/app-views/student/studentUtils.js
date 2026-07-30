@@ -3,6 +3,7 @@ import moment from 'moment'
 export const STUDENT_ORDER_ALIASES = {
   code: 'co',
   fullname: 'fn',
+  deleted_at: 'da',
 }
 
 export const buildStudentOrder = sorter => {
@@ -75,23 +76,92 @@ export const getSafeHttpUrl = value => {
   }
 }
 
+export const getStudentRowKey = recordOrId => {
+  const value = recordOrId && typeof recordOrId === 'object'
+    ? recordOrId.id
+    : recordOrId
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : ''
+  }
+  if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return ''
+  const id = Number(value.trim())
+  return Number.isSafeInteger(id) && id > 0 ? String(id) : ''
+}
+
+export const normalizeStudentRowKeys = values => {
+  const keys = Array.isArray(values) ? values.map(getStudentRowKey).filter(Boolean) : []
+  return [...new Set(keys)]
+}
+
+export const toStudentApiIds = keys => normalizeStudentRowKeys(keys).map(Number)
+
+export const buildStudentPageParams = (query, selectedRowKeys) => {
+  const excludedIds = toStudentApiIds(selectedRowKeys)
+  return {
+    page: query.page,
+    size: query.size,
+    search: query.search,
+    order: query.order || undefined,
+    // CSV avoids Axios' bracket-array serialization and is accepted by parseToplist.
+    ...(excludedIds.length ? { exclude_ids: excludedIds.join(',') } : {}),
+  }
+}
+
+const matchesText = (record, search, fields) => {
+  const keyword = typeof search === 'string' ? search.trim().toLocaleLowerCase('vi') : ''
+  if (!keyword) return true
+  return fields.some(field => String(record?.[field] || '').toLocaleLowerCase('vi').includes(keyword))
+}
+
+export const matchesStudentSearch = (record, search) => (
+  matchesText(record, search, ['fullname', 'description', 'email'])
+)
+
 export const buildDisplayedStudentRecords = (
   apiRecords,
   selectedRowKeys,
   selectedRecordsById,
-  getRecordKey = record => record.id
+  getRecordKey = record => record.id,
+  shouldIncludePinnedRecord = () => true
 ) => {
   const records = Array.isArray(apiRecords) ? apiRecords : []
   const keys = Array.isArray(selectedRowKeys) ? selectedRowKeys : []
   const recordsById = selectedRecordsById && typeof selectedRecordsById === 'object'
     ? selectedRecordsById
     : {}
-  const selectedKeySet = new Set(keys.map(String))
-  const pinnedRecords = keys.map(key => recordsById[key]).filter(Boolean)
+  const pinnedRecords = keys
+    .map(key => recordsById[key])
+    .filter(record => record && shouldIncludePinnedRecord(record))
+  const pinnedKeySet = new Set(pinnedRecords.map(record => String(getRecordKey(record))))
   return [
     ...pinnedRecords,
-    ...records.filter(record => !selectedKeySet.has(String(getRecordKey(record)))),
+    ...records.filter(record => !pinnedKeySet.has(String(getRecordKey(record)))),
   ]
+}
+
+export const getSelectionAdjustedPagination = ({
+  totalItems,
+  pageSize,
+  currentPage,
+  selectedRowKeys,
+  selectedRecordsById,
+  matchesRecord = () => true,
+}) => {
+  const recordsById = selectedRecordsById && typeof selectedRecordsById === 'object'
+    ? selectedRecordsById
+    : {}
+  const selected = (Array.isArray(selectedRowKeys) ? selectedRowKeys : [])
+    .map(key => recordsById[key])
+    .filter(record => record && matchesRecord(record))
+  const safeTotal = Math.max(0, Number(totalItems) || 0)
+  const safePageSize = Math.max(1, Number(pageSize) || 1)
+  const adjustedTotalItems = Math.max(0, safeTotal - selected.length)
+  const totalPages = Math.max(1, Math.ceil(adjustedTotalItems / safePageSize))
+  return {
+    totalItems: adjustedTotalItems,
+    totalPages,
+    currentPage: Math.min(Math.max(1, Number(currentPage) || 1), totalPages),
+  }
 }
 
 export const getPageScopedSelectionChange = ({

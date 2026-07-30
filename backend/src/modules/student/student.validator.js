@@ -1,4 +1,5 @@
-const { parseRequiredPositiveId, parsePaginationQuery, parseIdList } = require('../../core/http/requestParsers');
+const { parseRequiredPositiveId, parsePaginationQuery, parseIdList, parseToplist } = require('../../core/http/requestParsers');
+const AppError = require('../../core/http/AppError');
 const errors = require('./student.errors');
 
 const REGEX_EMAIL = /^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/;
@@ -57,16 +58,61 @@ const parseLegacyId = (value, errorConfig) => parseRequiredPositiveId(value, {
   legacyParseInt: true,
 });
 
-const parseStudentPageQuery = (query) => parsePaginationQuery(query, {
-  legacyParseInt: true,
-  pageError: errors.getByPage.invalidPage,
-  sizeError: errors.getByPage.invalidSize,
-  toplistOptions: { legacyParseInt: true, invalid: 'omit' },
-});
+const parseStudentPageQuery = (query) => {
+  const parsed = parsePaginationQuery(query, {
+    legacyParseInt: true,
+    pageError: errors.getByPage.invalidPage,
+    sizeError: errors.getByPage.invalidSize,
+    toplistOptions: { legacyParseInt: true, invalid: 'omit' },
+  });
+  const excludeIds = query.exclude_ids === undefined ? query['exclude_ids[]'] : query.exclude_ids;
+  if (excludeIds === undefined) return parsed;
+  return {
+    ...parsed,
+    excludeIds: parseToplist(excludeIds, { legacyParseInt: true, invalid: 'omit' }),
+  };
+};
 
 const parseLegacyIdList = (value, errorConfig) => parseIdList(value, { validate: false, errorConfig });
 
 const isValidExportType = (value) => ['csv', 'xlsx', 'json', 'xml'].includes(value);
+
+const parseCopyDrafts = (value, activeMask) => {
+  if (!Array.isArray(value) || value.length === 0) throw new AppError(errors.copy.invalidIdList);
+  const keys = new Set();
+  return value.map((draft, index) => {
+    const sourceId = Number(draft?.sourceId);
+    const draftKey = typeof draft?.draftKey === 'string' ? draft.draftKey.trim() : '';
+    const raw = draft?.values;
+    if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !draftKey || keys.has(draftKey) || !raw || typeof raw !== 'object') {
+      throw new AppError({ ...errors.copy.invalidIdList, message: `Draft ${index + 1} không hợp lệ` });
+    }
+    keys.add(draftKey);
+    const values = {
+      code: typeof raw.code === 'string' ? raw.code.trim() : '',
+      fullname: typeof raw.fullname === 'string' ? raw.fullname.trim() : '',
+      dob: raw.dob || null,
+      sex: raw.sex ?? null,
+      homecity: typeof raw.homecity === 'string' ? raw.homecity.trim() : '',
+      address: typeof raw.address === 'string' ? raw.address.trim() : '',
+      hair_color: typeof raw.hair_color === 'string' ? raw.hair_color.trim().toUpperCase() : '',
+      email: typeof raw.email === 'string' ? raw.email.trim().toLowerCase() : '',
+      facebook: typeof raw.facebook === 'string' ? raw.facebook.trim() : '',
+      class_id: raw.class_id === '' || raw.class_id == null ? null : Number(raw.class_id),
+      username: typeof raw.username === 'string' ? raw.username.trim() : '',
+      description: typeof raw.description === 'string' ? raw.description.trim() : '',
+      hobbies: raw.hobbies == null || raw.hobbies === '' ? 0 : Number(raw.hobbies),
+    };
+    if (!values.code || !values.fullname || !values.email || !values.username ||
+      (values.class_id !== null && (!Number.isSafeInteger(values.class_id) || values.class_id <= 0)) ||
+      !Number.isInteger(values.hobbies)) {
+      throw new AppError({ ...errors.copy.invalidIdList, message: `Dữ liệu draft ${index + 1} không hợp lệ` });
+    }
+    const validation = validateStudent(values, false, activeMask);
+    if (validation) throw new AppError({ ...errors.copy.invalidIdList, message: validation });
+    return { draftKey, sourceId, values };
+  });
+};
 
 module.exports = {
   validateStudent,
@@ -75,7 +121,9 @@ module.exports = {
   parseUpdateId: (value) => parseLegacyId(value, errors.update.invalidId),
   parseDestroyId: (value) => parseLegacyId(value, errors.destroy.invalidId),
   parseMassDestroyIdList: (value) => parseLegacyIdList(value, errors.destroy.invalidIdList),
+  parseTrashIdList: (value) => parseIdList(value, { errorConfig: errors.trash.invalidIdList }),
   parseCopyOneId: (value) => parseLegacyId(value, errors.copy.invalidId),
   parseMassCopyIdList: (value) => parseLegacyIdList(value, errors.copy.invalidIdList),
+  parseCopyDrafts,
   isValidExportType,
 };
