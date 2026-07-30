@@ -112,6 +112,18 @@ StudentService.importStudents = function (formData) {
   })
 }
 
+StudentService.downloadImportTemplate = function (type) {
+  return fetch({ url: '/student/import/template', method: 'get', params: { type }, responseType: 'blob', returnFullResponse: true })
+}
+
+StudentService.validateImportDrafts = function (drafts) {
+  return fetch({ url: '/student/import/validate', method: 'post', data: { drafts } })
+}
+
+StudentService.commitImportDrafts = function (drafts) {
+  return fetch({ url: '/student/import/commit', method: 'post', data: { drafts } })
+}
+
 StudentService.massExport = function (idlist, type) {
   return fetch({
     url: '/student/export',

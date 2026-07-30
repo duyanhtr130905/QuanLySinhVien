@@ -44,3 +44,18 @@ describe('StudentService copy preview contracts', () => {
     expect(fetch).not.toHaveBeenCalledWith(expect.objectContaining({ url: '/student/copy', method: 'post' }))
   })
 })
+
+describe('StudentService import preview contracts', () => {
+  beforeEach(() => fetch.mockReset())
+
+  test('uploads for preview, then validates and commits the complete draft set explicitly', () => {
+    const formData = new FormData()
+    const drafts = [{ draftKey: 'import-1', rowNumber: 2, values: { code: 'SV01', hobbies: 'Đọc sách' } }]
+    StudentService.importStudents(formData)
+    StudentService.validateImportDrafts(drafts)
+    StudentService.commitImportDrafts(drafts)
+    expect(fetch).toHaveBeenNthCalledWith(1, { url: '/student/import', method: 'post', data: formData })
+    expect(fetch).toHaveBeenNthCalledWith(2, { url: '/student/import/validate', method: 'post', data: { drafts } })
+    expect(fetch).toHaveBeenNthCalledWith(3, { url: '/student/import/commit', method: 'post', data: { drafts } })
+  })
+})

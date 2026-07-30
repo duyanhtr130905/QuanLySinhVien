@@ -5,6 +5,7 @@ import StudentCreate from './student-create/StudentCreate';
 import StudentDetail from './student-detail';
 import StudentEdit from './student-edit';
 import StudentImport from './student-import';
+import StudentImportPreview from './student-import/StudentImportPreview';
 import StudentExport from './student-export/StudentExport';
 import StudentCopy from './student-copy/StudentCopy';
 import StudentCopyResult from './student-copy/StudentCopyResult';
@@ -19,6 +20,7 @@ const Student = ({ match }) => {
 			<Route path={`${match.url}/create`} component={StudentCreate} />
 			<Route path={`${match.url}/deleted`} component={StudentDeletedList} />
 			<Route path={`${match.url}/edit/:id`} component={StudentEdit} />
+			<Route path={`${match.url}/import-preview`} component={StudentImportPreview} />
 			<Route path={`${match.url}/import`} component={StudentImport} />
 			<Route path={`${match.url}/export`} component={StudentExport} />
 			<Route path={`${match.url}/copy-result`} component={StudentCopyResult} />

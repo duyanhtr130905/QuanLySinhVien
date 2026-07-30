@@ -10,6 +10,7 @@ import {
   UploadOutlined
 } from '@ant-design/icons'
 import ClassService from 'services/ClassService'
+import StudentService from 'services/StudentService'
 import downloadBlob from 'utils/downloadBlob'
 import { clearStudentImport, importStudents } from 'redux/actions/Student'
 import {
@@ -17,7 +18,7 @@ import {
   unwrapCollection
 } from '../studentUtils'
 import {
-  createImportTemplate, formatFileSize, getFileExtension, IMPORT_FORMATS,
+  formatFileSize, getFileExtension, IMPORT_FORMATS,
   validateImportFile
 } from './studentImportUtils'
 import './StudentImport.css'
@@ -73,10 +74,10 @@ const StudentImport = () => {
     [item.id]: getClassLabel(item) || `Lớp #${item.id}`,
   }), {}), [classes])
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
     try {
-      const template = createImportTemplate(templateFormat)
-      downloadBlob(template, `student-import-template.${templateFormat}`)
+      const response = await StudentService.downloadImportTemplate(templateFormat)
+      downloadBlob(response.data, `student-import-template.${templateFormat}`)
       message.success(`Đã tải mẫu ${templateFormat.toUpperCase()}`)
     } catch (error) {
       message.error(error.message || 'Không thể tạo file mẫu.')
@@ -119,6 +120,10 @@ const StudentImport = () => {
     dispatch(importStudents(
       formData,
       data => {
+        if (Array.isArray(data?.rows)) {
+          history.push('/app/student/import-preview', { preview: data })
+          return
+        }
         const importResult = data || { created: [], failed: [] }
         const failed = Array.isArray(importResult.failed) ? importResult.failed : []
         const created = Array.isArray(importResult.created) ? importResult.created : []
