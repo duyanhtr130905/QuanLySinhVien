@@ -34,4 +34,22 @@ describe('PgTransactionManager', () => {
     expect(client.query).toHaveBeenNthCalledWith(2, 'ROLLBACK');
     expect(client.release).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves the callback error and releases the client when ROLLBACK fails', async () => {
+    const callbackError = new Error('work failed');
+    const rollbackError = new Error('rollback failed');
+    const client = createClient();
+    jest.mocked(client.query)
+      .mockResolvedValueOnce({ rows: [] } as never)
+      .mockRejectedValueOnce(rollbackError);
+    const pool = { connect: jest.fn().mockResolvedValue(client) } as unknown as Pool;
+    const manager = new PgTransactionManager(pool);
+
+    await expect(manager.run(async () => { throw callbackError; })).rejects.toBe(callbackError);
+
+    expect(client.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(client.query).toHaveBeenNthCalledWith(2, 'ROLLBACK');
+    expect((callbackError as Error & { rollbackError?: unknown }).rollbackError).toBe(rollbackError);
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
 });

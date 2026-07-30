@@ -1,9 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { PG_POOL } from './database.tokens';
 
 @Injectable()
 export class PgTransactionManager {
+  private readonly logger = new Logger(PgTransactionManager.name);
+
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
   async run<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -14,10 +16,33 @@ export class PgTransactionManager {
       await client.query('COMMIT');
       return result;
     } catch (error) {
-      await client.query('ROLLBACK');
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        this.recordRollbackError(error, rollbackError);
+      }
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  private recordRollbackError(error: unknown, rollbackError: unknown): void {
+    if (typeof error === 'object' && error !== null) {
+      try {
+        Object.defineProperty(error, 'rollbackError', {
+          value: rollbackError,
+          configurable: true,
+        });
+        return;
+      } catch {
+        // Preserve the original transaction failure even if it cannot be annotated.
+      }
+    }
+
+    this.logger.error(
+      'ROLLBACK failed while preserving the original transaction failure.',
+      rollbackError instanceof Error ? rollbackError.stack : String(rollbackError),
+    );
   }
 }
