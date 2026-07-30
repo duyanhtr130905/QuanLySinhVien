@@ -23,6 +23,7 @@ router.get('/page/:init', controller.getByPage);
 router.delete('/delete', controller.massDelete);
 router.post('/copy', controller.massCopy);
 router.post('/copy/preview', controller.copyPreview);
+router.post('/copy/validate', controller.copyValidate);
 router.post('/copy/commit', controller.copyCommit);
 router.post('/copy/:id', controller.copyOne);
 router.post('/import', uploadDataFile.single('file'), handleImportUploadError, controller.importClasses);

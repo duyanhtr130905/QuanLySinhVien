@@ -1,6 +1,6 @@
 const pool = require('../../config/db');
 const createListRepository = require('../../core/database/createListRepository');
-const { generateUniqueValue, runMassCopyTransaction } = require('../../utils/copyHelpers');
+const { generateUniqueValue, getCopyCandidateBatch, runMassCopyTransaction } = require('../../utils/copyHelpers');
 const { resolveColumns, resolveOrderBy } = require('../../utils/queryHelpers');
 const AppError = require('../../core/http/AppError');
 const errors = require('./class.errors');
@@ -475,27 +475,53 @@ const copyOneWithClient = async (client, id) => {
 const massCopy = (idlist) => runMassCopyTransaction(pool, copyOneWithClient, idlist);
 
 const getCopyPreview = async (idlist) => {
-  const reservedCodes = new Set();
+  const ids = [...new Set(idlist)];
+  const sourcesResult = await pool.query('SELECT id, code, name, description FROM tra_class WHERE id = ANY($1::int[])', [ids]);
+  const sources = new Map(sourcesResult.rows.map(row => [Number(row.id), row]));
+  const candidateCodes = new Set();
+  sourcesResult.rows.forEach(source => getCopyCandidateBatch('code', source.code, 50).forEach(code => candidateCodes.add(code)));
+  const existingResult = await pool.query('SELECT code FROM tra_class WHERE code = ANY($1::text[])', [[...candidateCodes]]);
+  const occupied = new Set(existingResult.rows.map(row => row.code));
+  const reserved = new Set();
   const drafts = [];
   const notFoundIds = [];
-  for (const id of idlist) {
-    const result = await pool.query('SELECT code, name, description FROM tra_class WHERE id = $1', [id]);
-    if (!result.rows.length) {
+  ids.forEach((id) => {
+    const source = sources.get(Number(id));
+    if (!source) {
       notFoundIds.push(id);
-      continue;
+      return;
     }
-    const source = result.rows[0];
-    drafts.push({
-      draftKey: `class-${id}`,
-      sourceId: id,
-      values: {
-        code: await generateUniqueValue(pool, 'tra_class', 'code', source.code, 50, reservedCodes),
-        name: source.name,
-        description: source.description || '',
-      },
-    });
-  }
+    const code = getCopyCandidateBatch('code', source.code, 50).find(candidate => !occupied.has(candidate) && !reserved.has(candidate));
+    if (!code) {
+      const error = new Error('KhÃ´ng thá»ƒ táº¡o mÃ£ lá»›p duy nháº¥t');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    reserved.add(code);
+    drafts.push({ draftKey: `class-${id}`, sourceId: id, values: { code, name: source.name, description: source.description || '' } });
+  });
   return { drafts, notFoundIds };
+};
+
+const validateCopyDrafts = async (drafts) => {
+  const rows = (Array.isArray(drafts) ? drafts : []).map((draft, index) => {
+    const code = typeof draft?.values?.code === 'string' ? draft.values.code.trim() : '';
+    const name = typeof draft?.values?.name === 'string' ? draft.values.name.trim() : '';
+    const errors = {};
+    if (!draft?.draftKey || typeof draft.draftKey !== 'string') errors.draftKey = `Draft ${index + 1} khÃ´ng há»£p lá»‡`;
+    if (!Number.isSafeInteger(Number(draft?.sourceId)) || Number(draft.sourceId) <= 0) errors.sourceId = 'Báº£n ghi gá»‘c khÃ´ng há»£p lá»‡';
+    if (!code) errors.code = 'MÃ£ lá»›p lÃ  báº¯t buá»™c'; else if (code.length > 50) errors.code = 'MÃ£ lá»›p khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 50 kÃ½ tá»±';
+    if (!name) errors.name = 'TÃªn lá»›p lÃ  báº¯t buá»™c'; else if (name.length > 255) errors.name = 'TÃªn lá»›p khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 255 kÃ½ tá»±';
+    return { draft, code, errors };
+  });
+  const counts = new Map();
+  rows.forEach(row => { if (row.code) counts.set(row.code, (counts.get(row.code) || 0) + 1); });
+  rows.forEach(row => { if (row.code && counts.get(row.code) > 1) row.errors.code = 'MÃ£ lá»›p bá»‹ trÃ¹ng trong cÃ¡c báº£n sao'; });
+  const codes = [...new Set(rows.filter(row => !row.errors.code && row.code).map(row => row.code))];
+  const existingResult = await pool.query('SELECT code FROM tra_class WHERE code = ANY($1::text[])', [codes]);
+  const existingCodes = new Set(existingResult.rows.map(row => row.code));
+  rows.forEach(row => { if (!row.errors.code && existingCodes.has(row.code)) row.errors.code = 'MÃ£ lá»›p Ä‘Ã£ tá»“n táº¡i'; });
+  return { rows: rows.map(row => ({ draftKey: row.draft?.draftKey || '', status: Object.keys(row.errors).length ? 'invalid' : 'valid', errors: row.errors })) };
 };
 
 const commitCopyDrafts = async (drafts) => {
@@ -539,6 +565,49 @@ const commitCopyDrafts = async (drafts) => {
   }
 };
 
+const commitCopyDraftsBatch = async (drafts) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const codes = drafts.map(draft => draft.values.code);
+    if (new Set(codes).size !== codes.length) {
+      const error = new Error('Duplicate class code in copy drafts');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const [existingResult, sourceResult] = await Promise.all([
+      client.query('SELECT code FROM tra_class WHERE code = ANY($1::text[])', [codes]),
+      client.query('SELECT id FROM tra_class WHERE id = ANY($1::int[]) FOR SHARE', [[...new Set(drafts.map(draft => draft.sourceId))]]),
+    ]);
+    if (existingResult.rows.length) {
+      const error = new Error('Class code already exists');
+      error.code = 'COPY_DUPLICATE';
+      throw error;
+    }
+    const sourceIds = new Set(sourceResult.rows.map(row => Number(row.id)));
+    const missingSource = drafts.map(draft => draft.sourceId).find(id => !sourceIds.has(Number(id)));
+    if (missingSource) {
+      const error = new Error(`Source class ${missingSource} was not found`);
+      error.code = 'COPY_SOURCE_NOT_FOUND';
+      throw error;
+    }
+    const result = await client.query(`
+      INSERT INTO tra_class (code, name, description, created_at, updated_at)
+      SELECT code, name, description, NOW(), NOW()
+      FROM UNNEST($1::text[], $2::text[], $3::text[]) AS input(code, name, description)
+      RETURNING *
+    `, [codes, drafts.map(draft => draft.values.name), drafts.map(draft => draft.values.description || null)]);
+    const createdByCode = new Map(result.rows.map(record => [record.code, record]));
+    await client.query('COMMIT');
+    return { created: drafts.map(draft => ({ draftKey: draft.draftKey, record: createdByCode.get(draft.values.code) })) };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   getAll,
   getByPage,
@@ -556,7 +625,8 @@ module.exports = {
   copyOne,
   massCopy,
   getCopyPreview,
-  commitCopyDrafts,
+  validateCopyDrafts,
+  commitCopyDrafts: commitCopyDraftsBatch,
   getManyForExport,
   getOneForExport,
 };

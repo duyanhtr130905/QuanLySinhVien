@@ -227,6 +227,17 @@ const copyPreview = asyncHandler(async (req, res) => {
   }
 });
 
+const copyValidate = asyncHandler(async (req, res) => {
+  try {
+    const data = await studentService.validateCopyDrafts(req.body.drafts);
+    return successResponse(res, data, 'ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao sinh viÃªn');
+  } catch (error) {
+    if (sendExpectedError(res, error)) return undefined;
+    error.fallbackCode = 'H600';
+    throw error;
+  }
+});
+
 const copyCommit = asyncHandler(async (req, res) => {
   const uploadedUrls = [];
   try {
@@ -359,6 +370,7 @@ module.exports = {
   copyOne,
   massCopy,
   copyPreview,
+  copyValidate,
   copyCommit,
   importStudents,
   exportOne,

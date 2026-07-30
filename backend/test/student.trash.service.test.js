@@ -14,6 +14,26 @@ const loadService = (pool) => {
   return service;
 };
 
+test('student copy preview batches sources and unique values for multiple drafts', async () => {
+  const calls = [];
+  const pool = {
+    query: async (...args) => {
+      calls.push(args);
+      if (calls.length === 1) return { rows: [
+        { id: 1, code: 'SV01', fullname: 'A', email: 'a@example.com', username: 'a', class_id: null },
+        { id: 2, code: 'SV02', fullname: 'B', email: 'b@example.com', username: 'b', class_id: null },
+      ] };
+      return { rows: [] };
+    },
+  };
+  const service = loadService(pool);
+  const preview = await service.getCopyPreview([1, 2]);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0][0], /id = ANY\(\$1::int\[\]\)/);
+  assert.match(calls[1][0], /code = ANY\(\$1::text\[\]\).*username = ANY.*email = ANY/s);
+  assert.deepEqual(preview.drafts.map(draft => draft.values.code), ['SV01-copy', 'SV02-copy']);
+});
+
 test('student deleted list only selects soft-deleted rows and never exposes password', async () => {
   const calls = [];
   const service = loadService({

@@ -218,6 +218,23 @@ test('class.removeStudent only clears class_id and never deletes the student', a
   assert.deepEqual(calls[2][1], [3, 7]);
 });
 
+test('class copy preview batches source and duplicate lookups instead of querying per draft', async () => {
+  const calls = [];
+  const pool = {
+    query: async (...args) => {
+      calls.push(args);
+      if (calls.length === 1) return { rows: [{ id: 1, code: 'C01', name: 'A' }, { id: 2, code: 'C02', name: 'B' }] };
+      return { rows: [] };
+    },
+  };
+  const service = loadService(pool);
+  const preview = await service.getCopyPreview([1, 2]);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0][0], /id = ANY\(\$1::int\[\]\)/);
+  assert.match(calls[1][0], /code = ANY\(\$1::text\[\]\)/);
+  assert.deepEqual(preview.drafts.map(draft => draft.values.code), ['C01-copy', 'C02-copy']);
+});
+
 test('class.removeStudents clears many class links atomically without deleting students', async () => {
   const calls = [];
   let released = false;

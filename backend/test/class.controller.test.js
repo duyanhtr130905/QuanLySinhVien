@@ -97,6 +97,16 @@ test('class.massDelete keeps a partial delete as a 200 response', async () => {
   assert.deepEqual(calls, [[[1, 2, 3]]]);
 });
 
+test('class.copyValidate submits all drafts to one batch validation service call', async () => {
+  const calls = [];
+  const drafts = [{ draftKey: 'class-1', sourceId: 1, values: { code: 'C01-copy', name: 'A' } }, { draftKey: 'class-2', sourceId: 2, values: { code: 'C01-copy', name: '' } }];
+  const controller = controllerFor({ validateCopyDrafts: async (...args) => { calls.push(args); return { rows: [{ draftKey: 'class-1', status: 'invalid', errors: { code: 'duplicate' } }] }; } });
+  const res = makeRes();
+  await controller.copyValidate(makeReq({ body: { drafts } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao lá»›p', { rows: [{ draftKey: 'class-1', status: 'invalid', errors: { code: 'duplicate' } }] });
+  assert.deepEqual(calls, [[drafts]]);
+});
+
 test('class.copyOne reports the copied record and forwards a numeric id', async () => {
   const calls = [];
   const controller = controllerFor({ copyOne: async (...args) => { calls.push(args); return { id: 8, code: 'C01-copy' }; } });

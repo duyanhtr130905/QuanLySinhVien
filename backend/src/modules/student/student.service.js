@@ -1,7 +1,7 @@
 const pool = require('../../config/db');
 const bcrypt = require('bcrypt');
 const createListRepository = require('../../core/database/createListRepository');
-const { generateUniqueValue, runMassCopyTransaction } = require('../../utils/copyHelpers');
+const { generateUniqueValue, getCopyCandidateBatch, runMassCopyTransaction } = require('../../utils/copyHelpers');
 
 const SALT_ROUNDS = 10;
 
@@ -535,28 +535,107 @@ const pickCopyValues = source => COPY_VALUE_COLUMNS.reduce((values, key) => ({
   [key]: source[key] == null ? null : source[key],
 }), {});
 
+const COPY_CANDIDATE_ATTEMPTS = 100;
+
+const selectAvailableCopyValue = (column, originalValue, maxLength, occupied, reserved) => {
+  const candidate = getCopyCandidateBatch(column, originalValue, maxLength, COPY_CANDIDATE_ATTEMPTS)
+    .find((value) => !occupied.has(value) && !reserved.has(value));
+  if (!candidate) {
+    const error = new Error(`KhÃ´ng thá»ƒ táº¡o giÃ¡ trá»‹ duy nháº¥t cho ${column}`);
+    error.code = 'COPY_DUPLICATE';
+    throw error;
+  }
+  reserved.add(candidate);
+  return candidate;
+};
+
 const getCopyPreview = async (idlist) => {
+  const ids = [...new Set(idlist)];
+  const sourcesResult = await pool.query(
+    `SELECT ${DEFAULT_SELECT} FROM tra_student WHERE id = ANY($1::int[]) AND deleted_at IS NULL`,
+    [ids]
+  );
+  const sourcesById = new Map(sourcesResult.rows.map((row) => [Number(row.id), row]));
+  const sourceRows = ids.map((id) => sourcesById.get(Number(id))).filter(Boolean);
+  const candidateSets = { code: new Set(), username: new Set(), email: new Set() };
+  sourceRows.forEach((source) => {
+    getCopyCandidateBatch('code', source.code, 50, COPY_CANDIDATE_ATTEMPTS).forEach(value => candidateSets.code.add(value));
+    getCopyCandidateBatch('username', source.username, 50, COPY_CANDIDATE_ATTEMPTS).forEach(value => candidateSets.username.add(value));
+    getCopyCandidateBatch('email', source.email, 256, COPY_CANDIDATE_ATTEMPTS).forEach(value => candidateSets.email.add(value));
+  });
+  const existingResult = await pool.query(
+    `SELECT code, username, email FROM tra_student
+     WHERE code = ANY($1::text[]) OR username = ANY($2::text[]) OR email = ANY($3::text[])`,
+    [[...candidateSets.code], [...candidateSets.username], [...candidateSets.email]]
+  );
+  const occupied = { code: new Set(), username: new Set(), email: new Set() };
+  existingResult.rows.forEach((row) => {
+    occupied.code.add(row.code);
+    occupied.username.add(row.username);
+    occupied.email.add(row.email);
+  });
   const reserved = { code: new Set(), username: new Set(), email: new Set() };
   const drafts = [];
   const notFoundIds = [];
-
-  for (const id of idlist) {
-    const result = await pool.query(
-      `SELECT ${DEFAULT_SELECT} FROM tra_student WHERE id = $1 AND deleted_at IS NULL`,
-      [id]
-    );
-    if (!result.rows.length) {
+  ids.forEach((id) => {
+    const source = sourcesById.get(Number(id));
+    if (!source) {
       notFoundIds.push(id);
-      continue;
+      return;
     }
-
-    const values = pickCopyValues(result.rows[0]);
-    values.code = await generateUniqueValue(pool, 'tra_student', 'code', values.code, 50, reserved.code);
-    values.username = await generateUniqueValue(pool, 'tra_student', 'username', values.username, 50, reserved.username);
-    values.email = await generateUniqueValue(pool, 'tra_student', 'email', values.email, 256, reserved.email);
+    const values = pickCopyValues(source);
+    values.code = selectAvailableCopyValue('code', values.code, 50, occupied.code, reserved.code);
+    values.username = selectAvailableCopyValue('username', values.username, 50, occupied.username, reserved.username);
+    values.email = selectAvailableCopyValue('email', values.email, 256, occupied.email, reserved.email);
     drafts.push({ draftKey: `student-${id}`, sourceId: id, values });
-  }
+  });
   return { drafts, notFoundIds };
+};
+
+const copyRowError = (draftKey, errors) => ({ draftKey, status: Object.keys(errors).length ? 'invalid' : 'valid', errors });
+const normalizedCopyText = value => typeof value === 'string' ? value.trim() : '';
+
+const validateCopyDrafts = async (drafts) => {
+  const rows = (Array.isArray(drafts) ? drafts : []).map((draft, index) => {
+    const raw = draft?.values || {};
+    const errors = {};
+    const code = normalizedCopyText(raw.code);
+    const fullname = normalizedCopyText(raw.fullname);
+    const username = normalizedCopyText(raw.username);
+    const email = normalizedCopyText(raw.email).toLowerCase();
+    const classId = raw.class_id === '' || raw.class_id == null ? null : Number(raw.class_id);
+    if (!draft?.draftKey || typeof draft.draftKey !== 'string') errors.draftKey = `Draft ${index + 1} khÃ´ng há»£p lá»‡`;
+    if (!Number.isSafeInteger(Number(draft?.sourceId)) || Number(draft.sourceId) <= 0) errors.sourceId = 'Báº£n ghi gá»‘c khÃ´ng há»£p lá»‡';
+    if (!code) errors.code = 'MÃ£ sinh viÃªn lÃ  báº¯t buá»™c'; else if (code.length > 50) errors.code = 'MÃ£ sinh viÃªn khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 50 kÃ½ tá»±';
+    if (!fullname) errors.fullname = 'Há» tÃªn lÃ  báº¯t buá»™c'; else if (fullname.length > 30) errors.fullname = 'Há» tÃªn khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 30 kÃ½ tá»±';
+    if (!username) errors.username = 'Username lÃ  báº¯t buá»™c'; else if (username.length > 50) errors.username = 'Username khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 50 kÃ½ tá»±';
+    if (!email) errors.email = 'Email lÃ  báº¯t buá»™c'; else if (email.length > 256 || !/^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/.test(email)) errors.email = 'Email khÃ´ng Ä‘Ãºng Ä‘á»‹nh dáº¡ng';
+    if (classId !== null && (!Number.isSafeInteger(classId) || classId <= 0)) errors.class_id = 'ID lá»›p khÃ´ng há»£p lá»‡';
+    if (raw.hobbies !== undefined && raw.hobbies !== null && raw.hobbies !== '' && (!Number.isInteger(Number(raw.hobbies)) || Number(raw.hobbies) < 0)) errors.hobbies = 'Sá»Ÿ thÃ­ch khÃ´ng há»£p lá»‡';
+    return { draft, code, username, email, classId, errors };
+  });
+  ['code', 'username', 'email'].forEach((field) => {
+    const counts = new Map();
+    rows.forEach((row) => { if (row[field]) counts.set(row[field], (counts.get(row[field]) || 0) + 1); });
+    rows.forEach((row) => { if (row[field] && counts.get(row[field]) > 1) row.errors[field] = `${field} bá»‹ trÃ¹ng trong cÃ¡c báº£n sao`; });
+  });
+  const validValues = field => [...new Set(rows.filter(row => !row.errors[field] && row[field]).map(row => row[field]))];
+  const classIds = [...new Set(rows.filter(row => !row.errors.class_id && row.classId !== null).map(row => row.classId))];
+  const [existingResult, classesResult] = await Promise.all([
+    pool.query(
+      'SELECT code, username, email FROM tra_student WHERE code = ANY($1::text[]) OR username = ANY($2::text[]) OR email = ANY($3::text[])',
+      [validValues('code'), validValues('username'), validValues('email')]
+    ),
+    classIds.length ? pool.query('SELECT id FROM tra_class WHERE id = ANY($1::int[])', [classIds]) : Promise.resolve({ rows: [] }),
+  ]);
+  const existing = { code: new Set(), username: new Set(), email: new Set() };
+  existingResult.rows.forEach((row) => ['code', 'username', 'email'].forEach((field) => { if (row[field]) existing[field].add(row[field]); }));
+  const classIdsInDb = new Set(classesResult.rows.map(row => Number(row.id)));
+  rows.forEach((row) => {
+    ['code', 'username', 'email'].forEach((field) => { if (!row.errors[field] && existing[field].has(row[field])) row.errors[field] = `${field} Ä‘Ã£ tá»“n táº¡i`; });
+    if (!row.errors.class_id && row.classId !== null && !classIdsInDb.has(row.classId)) row.errors.class_id = 'Lá»›p khÃ´ng tá»“n táº¡i';
+  });
+  return { rows: rows.map(row => copyRowError(row.draft?.draftKey || '', row.errors)) };
 };
 
 const assertCopyDraftUnique = async (client, drafts) => {
@@ -623,6 +702,54 @@ const commitCopyDrafts = async (drafts, attachmentUrls = new Map()) => {
   }
 };
 
+// Commit rechecks the database inside the transaction, but performs source
+// locking and insertion in batches rather than once per draft.
+const commitCopyDraftsBatch = async (drafts, attachmentUrls = new Map()) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await assertCopyDraftUnique(client, drafts);
+    const sourceIds = [...new Set(drafts.map(draft => draft.sourceId))];
+    const sourceResult = await client.query(
+      'SELECT id, password, attachment FROM tra_student WHERE id = ANY($1::int[]) AND deleted_at IS NULL FOR SHARE',
+      [sourceIds]
+    );
+    const sources = new Map(sourceResult.rows.map(source => [Number(source.id), source]));
+    const missingSource = sourceIds.find(id => !sources.has(Number(id)));
+    if (missingSource) {
+      const error = new Error(`Source student ${missingSource} was not found`);
+      error.code = 'COPY_SOURCE_NOT_FOUND';
+      throw error;
+    }
+    const result = await client.query(`
+      INSERT INTO tra_student
+        (code, fullname, dob, sex, homecity, address, hair_color, email, facebook,
+         class_id, username, password, description, hobbies, attachment, created_at, updated_at)
+      SELECT input.*, NOW(), NOW() FROM UNNEST(
+        $1::text[], $2::text[], $3::date[], $4::boolean[], $5::text[], $6::text[], $7::text[],
+        $8::text[], $9::text[], $10::int[], $11::text[], $12::text[], $13::text[], $14::int[], $15::text[]
+      ) AS input(code, fullname, dob, sex, homecity, address, hair_color, email, facebook,
+        class_id, username, password, description, hobbies, attachment)
+      RETURNING ${DEFAULT_SELECT}
+    `, [
+      drafts.map(draft => draft.values.code), drafts.map(draft => draft.values.fullname), drafts.map(draft => draft.values.dob || null),
+      drafts.map(draft => draft.values.sex ?? null), drafts.map(draft => draft.values.homecity || null), drafts.map(draft => draft.values.address || null),
+      drafts.map(draft => draft.values.hair_color || null), drafts.map(draft => draft.values.email), drafts.map(draft => draft.values.facebook || null),
+      drafts.map(draft => draft.values.class_id || null), drafts.map(draft => draft.values.username),
+      drafts.map(draft => sources.get(Number(draft.sourceId)).password), drafts.map(draft => draft.values.description || null),
+      drafts.map(draft => draft.values.hobbies ?? 0), drafts.map(draft => attachmentUrls.get(draft.draftKey) ?? sources.get(Number(draft.sourceId)).attachment ?? null),
+    ]);
+    const createdByCode = new Map(result.rows.map(record => [record.code, record]));
+    await client.query('COMMIT');
+    return { created: drafts.map(draft => ({ draftKey: draft.draftKey, record: createdByCode.get(draft.values.code) })) };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 
 // ============================================================
 // EXPORT HELPERS
@@ -668,5 +795,5 @@ module.exports = {
   restoreDeleted, permanentlyDelete,
   getActiveHobbyMask,
   uploadAttachment, deleteAttachment, getAttachmentById,
-  copyOne, massCopy, getCopyPreview, commitCopyDrafts, getManyByIds, getOneById,
+  copyOne, massCopy, getCopyPreview, validateCopyDrafts, commitCopyDrafts: commitCopyDraftsBatch, getManyByIds, getOneById,
 };

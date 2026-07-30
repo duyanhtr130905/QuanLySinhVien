@@ -372,6 +372,16 @@ test('student.massExport forwards idlist and writes the export response headers'
   assert.equal(res.sent, output);
 });
 
+test('student.copyValidate submits all drafts to one batch validation service call', async () => {
+  const calls = [];
+  const drafts = [{ draftKey: 'student-1', sourceId: 1, values: { code: 'SV01-copy' } }, { draftKey: 'student-2', sourceId: 2, values: { code: 'SV01-copy' } }];
+  const controller = controllerFor({ validateCopyDrafts: async (...args) => { calls.push(args); return { rows: [{ draftKey: 'student-1', status: 'invalid', errors: { code: 'duplicate' } }] }; } });
+  const res = makeRes();
+  await controller.copyValidate(makeReq({ body: { drafts } }), res, makeNext());
+  expectApiResponse(res, 200, '200', 'ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao sinh viÃªn', { rows: [{ draftKey: 'student-1', status: 'invalid', errors: { code: 'duplicate' } }] });
+  assert.deepEqual(calls, [[drafts]]);
+});
+
 test('student copy preview is read-only and commit forwards validated drafts', async () => {
   const previewCalls = [];
   const commitCalls = [];

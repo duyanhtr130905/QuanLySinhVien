@@ -62,6 +62,7 @@ router.delete('/deleted/permanent', controller.permanentlyDelete);
 // Sao chép (path cố định /copy phải trước /copy/:id)
 router.post('/copy', controller.massCopy);
 router.post('/copy/preview', controller.copyPreview);
+router.post('/copy/validate', controller.copyValidate);
 router.post('/copy/commit', upload.any(), handleMulterError, controller.copyCommit);
 router.post('/copy/:id', controller.copyOne);
 

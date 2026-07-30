@@ -293,6 +293,17 @@ const copyPreview = asyncHandler(async (req, res) => {
   }
 });
 
+const copyValidate = asyncHandler(async (req, res) => {
+  try {
+    const data = await classService.validateCopyDrafts(req.body.drafts);
+    return successResponse(res, data, 'ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao lá»›p');
+  } catch (error) {
+    if (error.statusCode && error.errorCode) return errorResponse(res, error.statusCode, error.errorCode, error.message);
+    error.fallbackCode = 'H600';
+    throw error;
+  }
+});
+
 const copyCommit = asyncHandler(async (req, res) => {
   try {
     const data = await classService.commitCopyDrafts(validator.parseCopyDrafts(req.body.drafts));
@@ -331,6 +342,7 @@ module.exports = {
   copyOne,
   massCopy,
   copyPreview,
+  copyValidate,
   copyCommit,
   importClasses,
   exportOne,
