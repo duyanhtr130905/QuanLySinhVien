@@ -309,31 +309,24 @@ test('student.importStudents reports a missing multipart file without parsing a 
   });
   const res = makeRes();
   await controller.importStudents(makeReq(), res, makeNext());
-  expectApiResponse(res, 400, 'J604', 'Không tìm thấy file upload', null);
+  expectApiResponse(res, 400, 'J604', 'Missing import file', null);
   assert.equal(parsed, false);
 });
 
-test('student.importStudents retains partial-success response semantics', async () => {
-  const storeCalls = [];
+test('student.importStudents creates a preview and never writes students', async () => {
+  let writes = 0;
   const controller = controllerFor({
-    getActiveHobbyMask: async () => 0,
-    store: async (...args) => { storeCalls.push(args); return { id: 11 }; },
+    validateImportDrafts: async drafts => ({ rows: drafts.map(draft => ({ ...draft, mode: 'create', status: 'valid', errors: {}, missingHobbies: [] })) }),
+    store: async () => { writes += 1; },
   }, {
-    parseFile: async () => [
-      { ...validStudent, sex: 'false', hobbies: '0' },
-      { ...validStudent, code: '' },
-    ],
+    parseFile: async () => [{ ...validStudent, gender: 'Nam', hobbies: '' }],
     buildFile: () => { throw new Error('not used'); },
   });
   const res = makeRes();
-  await controller.importStudents(makeReq({
-    file: { originalname: 'students.csv', buffer: Buffer.from('not-read') },
-  }), res, makeNext());
-  expectApiResponse(res, 200, '200', 'Import thành công 1 dòng, lỗi 1 dòng', {
-    created: [{ id: 11 }],
-    failed: [{ row: 3, reason: 'code là bắt buộc' }],
-  });
-  assert.deepEqual(storeCalls, [[{ ...validStudent, sex: false, hobbies: 0 }]]);
+  await controller.importStudents(makeReq({ file: { originalname: 'students.csv', buffer: Buffer.from('not-read') } }), res, makeNext());
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.data.rows.length, 1);
+  assert.equal(writes, 0);
 });
 
 test('student.exportOne uses the requested format contract without a real file', async () => {
@@ -342,6 +335,7 @@ test('student.exportOne uses the requested format contract without a real file',
   const output = Buffer.from('[]');
   const controller = controllerFor({
     getOneById: async (...args) => { serviceCalls.push(args); return { id: 4, fullname: 'A' }; },
+    getFileLookups: async () => ({ classes: [], hobbies: [] }),
   }, {
     parseFile: async () => [],
     buildFile: (...args) => { buildCalls.push(args); return { buffer: output, contentType: 'application/json', extension: 'json' }; },
@@ -349,7 +343,8 @@ test('student.exportOne uses the requested format contract without a real file',
   const res = makeRes();
   await controller.exportOne(makeReq({ params: { id: '4' }, query: { type: 'json' } }), res, makeNext());
   assert.deepEqual(serviceCalls, [[4]]);
-  assert.deepEqual(buildCalls, [[[{ id: 4, fullname: 'A' }], 'json']]);
+  assert.equal(buildCalls[0][1], 'json');
+  assert.equal(buildCalls[0][2].includes('password'), true);
   assert.equal(res.headers['Content-Type'], 'application/json');
   assert.equal(res.headers['Content-Disposition'], 'attachment; filename="student-4.json"');
   assert.equal(res.sent, output);
@@ -360,6 +355,7 @@ test('student.massExport forwards idlist and writes the export response headers'
   const output = Buffer.from('id,fullname');
   const controller = controllerFor({
     getManyByIds: async (...args) => { serviceCalls.push(args); return [{ id: 4 }]; },
+    getFileLookups: async () => ({ classes: [], hobbies: [] }),
   }, {
     parseFile: async () => [],
     buildFile: () => ({ buffer: output, contentType: 'text/csv', extension: 'csv' }),

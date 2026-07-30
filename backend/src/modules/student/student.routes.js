@@ -67,7 +67,10 @@ router.post('/copy/commit', upload.any(), handleMulterError, controller.copyComm
 router.post('/copy/:id', controller.copyOne);
 
 // Import file dữ liệu (csv/xlsx/json/xml)
+router.get('/import/template', controller.importTemplate);
 router.post('/import', uploadDataFile.single('file'), controller.importStudents);
+router.post('/import/validate', controller.importValidate);
+router.post('/import/commit', controller.importCommit);
 
 // Export (path cố định /export phải trước /export/:id)
 router.post('/export', controller.massExport);

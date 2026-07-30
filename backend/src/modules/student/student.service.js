@@ -2,6 +2,7 @@ const pool = require('../../config/db');
 const bcrypt = require('bcrypt');
 const createListRepository = require('../../core/database/createListRepository');
 const { generateUniqueValue, getCopyCandidateBatch, runMassCopyTransaction } = require('../../utils/copyHelpers');
+const { normalizeFileRow, normalizeHobbyName } = require('./student.fileSchema');
 
 const SALT_ROUNDS = 10;
 
@@ -789,6 +790,113 @@ const getOneById = async (id) => {
   return result.rows.length ? result.rows[0] : null;
 };
 
+const validateImportDrafts = async (drafts, queryable = pool) => {
+  const input = Array.isArray(drafts) ? drafts : [];
+  const lookups = await getFileLookups(queryable);
+  const classByCode = new Map(lookups.classes.map(item => [String(item.code).trim().toLocaleLowerCase('vi'), item]));
+  const hobbyByName = new Map(lookups.hobbies.map(item => [normalizeHobbyName(item.name), item]));
+  const normalized = input.map(draft => normalizeFileRow(draft?.values));
+  const valuesFor = field => [...new Set(normalized.map(values => values[field]).filter(Boolean))];
+  const codes = valuesFor('code');
+  const existingResult = (codes.length || valuesFor('email').length || valuesFor('username').length) ? await queryable.query(
+    'SELECT id, code, email, username FROM tra_student WHERE (code = ANY($1::text[]) OR email = ANY($2::text[]) OR username = ANY($3::text[])) AND deleted_at IS NULL',
+    [codes, valuesFor('email'), valuesFor('username')]
+  ) : { rows: [] };
+  const existingByCode = new Map(existingResult.rows.map(row => [row.code, row]));
+  const counts = { code: new Map(), email: new Map(), username: new Map() };
+  normalized.forEach(values => ['code', 'email', 'username'].forEach(field => { if (values[field]) counts[field].set(values[field], (counts[field].get(values[field]) || 0) + 1); }));
+  const rows = input.map((draft, index) => {
+    const values = normalizeFileRow(draft?.values);
+    const errors = {};
+    if (!values.code) errors.code = 'MÃ£ sinh viÃªn lÃ  báº¯t buá»™c';
+    else if (values.code.length > 50) errors.code = 'MÃ£ sinh viÃªn quÃ¡ 50 kÃ½ tá»±';
+    else if (counts.code.get(values.code) > 1) errors.code = 'MÃ£ sinh viÃªn bá»‹ trÃ¹ng trong file';
+    if (!values.fullname) errors.fullname = 'Há» tÃªn lÃ  báº¯t buá»™c'; else if (values.fullname.length > 30) errors.fullname = 'Há» tÃªn quÃ¡ 30 kÃ½ tá»±';
+    if (!values.email || !/^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/.test(values.email)) errors.email = 'Email khÃ´ng há»£p lá»‡'; else if (counts.email.get(values.email) > 1) errors.email = 'Email bá»‹ trÃ¹ng trong file';
+    if (!values.username) errors.username = 'Username lÃ  báº¯t buá»™c'; else if (values.username.length > 50) errors.username = 'Username quÃ¡ 50 kÃ½ tá»±'; else if (counts.username.get(values.username) > 1) errors.username = 'Username bá»‹ trÃ¹ng trong file';
+    if (values.gender === undefined) errors.gender = 'Giá»›i tÃ­nh pháº£i lÃ  Nam/Ná»¯ hoáº·c True/False/1/0';
+    if (values.dob === undefined) errors.dob = 'NgÃ y sinh pháº£i theo DD/MM/YYYY';
+    const existing = existingByCode.get(values.code);
+    existingResult.rows.forEach((record) => {
+      if (record.code !== values.code && record.email === values.email) errors.email = 'Email Ä‘Ã£ tá»“n táº¡i';
+      if (record.code !== values.code && record.username === values.username) errors.username = 'Username Ä‘Ã£ tá»“n táº¡i';
+    });
+    if (!existing && !values.password) errors.password = 'Password báº¯t buá»™c khi táº¡o má»›i';
+    if (values.class && !classByCode.has(values.class.toLocaleLowerCase('vi'))) errors.class = 'Lá»›p khÃ´ng tá»“n táº¡i';
+    if (values.password && /^\$2[aby]\$/.test(values.password)) errors.password = 'Password import must not be a hash';
+    else if (values.password && !/^(?=.*[0-9])(?=.*[A-Z])(?=.*[a-z])(?=.*[^A-Za-z0-9\s]).{8,}$/.test(values.password)) errors.password = 'Password must include upper/lowercase, number, special character and be at least 8 characters';
+    if (values.homecity.length > 100) errors.homecity = 'homecity exceeds 100 characters';
+    if (values.address.length > 100) errors.address = 'address exceeds 100 characters';
+    if (values.hair_color.length > 7) errors.hair_color = 'hair_color exceeds 7 characters';
+    if (values.email.length > 256) errors.email = 'email exceeds 256 characters';
+    if (values.facebook && (values.facebook.length > 256 || !/^https?:\/\/[0-9a-zA-Z.\-_]+$/.test(values.facebook))) errors.facebook = 'facebook must be a valid http/https URL';
+    const missingHobbies = values.hobbies.filter(name => !hobbyByName.has(normalizeHobbyName(name)));
+    if (missingHobbies.length) errors.hobbies = `Hobby chÆ°a tá»“n táº¡i: ${missingHobbies.join('; ')}`;
+    return { draftKey: draft?.draftKey || `import-${index + 1}`, rowNumber: draft?.rowNumber || index + 2, values, mode: existing ? 'update' : 'create', errors, fieldErrors: errors, missingHobbies };
+  });
+  return { rows: rows.map(row => ({ ...row, status: Object.keys(row.errors).length ? 'invalid' : 'valid' })), lookups };
+};
+
+const getFileLookups = async (queryable = pool) => {
+  const [classes, hobbies] = await Promise.all([
+    queryable.query('SELECT id, code FROM tra_class ORDER BY id ASC'),
+    queryable.query('SELECT id, name, bit_value FROM tra_hobby WHERE is_active = true ORDER BY bit_value ASC'),
+  ]);
+  return { classes: classes.rows, hobbies: hobbies.rows };
+};
+
+const commitImportDrafts = async (drafts) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const preview = await validateImportDrafts(drafts, client);
+    const invalidRows = preview.rows.filter(row => row.status !== 'valid');
+    if (invalidRows.length) {
+      const error = new Error('Import drafts are invalid');
+      error.code = 'IMPORT_VALIDATION';
+      error.rows = invalidRows;
+      throw error;
+    }
+    const codes = preview.rows.map(row => row.values.code);
+    const existingResult = await client.query(
+      'SELECT id, code FROM tra_student WHERE code = ANY($1::text[]) AND deleted_at IS NULL FOR UPDATE', [codes]
+    );
+    const existingByCode = new Map(existingResult.rows.map(row => [row.code, row]));
+    const classByCode = new Map(preview.lookups.classes.map(item => [String(item.code).trim().toLocaleLowerCase('vi'), item]));
+    const hobbyByName = new Map(preview.lookups.hobbies.map(item => [normalizeHobbyName(item.name), item]));
+    const created = [];
+    const updated = [];
+    for (const row of preview.rows) {
+      const values = row.values;
+      const classId = values.class ? classByCode.get(values.class.toLocaleLowerCase('vi')).id : null;
+      const hobbies = values.hobbies.reduce((mask, name) => mask | Number(hobbyByName.get(normalizeHobbyName(name)).bit_value), 0);
+      const current = existingByCode.get(values.code);
+      if (current) {
+        const fields = ['fullname = $1', 'dob = $2', 'sex = $3', 'class_id = $4', 'email = $5', 'username = $6', 'homecity = $7', 'address = $8', 'hobbies = $9', 'description = $10', 'hair_color = $11', 'facebook = $12', 'updated_at = NOW()'];
+        const params = [values.fullname, values.dob, values.gender, classId, values.email, values.username, values.homecity || null, values.address || null, hobbies, values.description || null, values.hair_color || null, values.facebook || null];
+        if (values.password) { fields.push(`password = $${params.length + 1}`); params.push(await bcrypt.hash(values.password, SALT_ROUNDS)); }
+        params.push(current.id);
+        const result = await client.query(`UPDATE tra_student SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING id, code`, params);
+        updated.push({ draftKey: row.draftKey, rowNumber: row.rowNumber, record: result.rows[0] });
+      } else {
+        const result = await client.query(
+          `INSERT INTO tra_student (code, fullname, dob, sex, class_id, email, username, password, homecity, address, hobbies, description, hair_color, facebook, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW()) RETURNING id, code`,
+          [values.code, values.fullname, values.dob, values.gender, classId, values.email, values.username, await bcrypt.hash(values.password, SALT_ROUNDS), values.homecity || null, values.address || null, hobbies, values.description || null, values.hair_color || null, values.facebook || null]
+        );
+        created.push({ draftKey: row.draftKey, rowNumber: row.rowNumber, record: result.rows[0] });
+      }
+    }
+    await client.query('COMMIT');
+    return { created, updated };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
 
   getAll, getByPage, getDeletedByPage, store, update, destroy,massDestroy,
@@ -797,3 +905,6 @@ module.exports = {
   uploadAttachment, deleteAttachment, getAttachmentById,
   copyOne, massCopy, getCopyPreview, validateCopyDrafts, commitCopyDrafts: commitCopyDraftsBatch, getManyByIds, getOneById,
 };
+module.exports.getFileLookups = getFileLookups;
+module.exports.validateImportDrafts = validateImportDrafts;
+module.exports.commitImportDrafts = commitImportDrafts;

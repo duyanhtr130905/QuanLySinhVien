@@ -25,12 +25,12 @@ const successResponse = (res, data, message = 'Thành công') => {
  * @param {string} errorCode - Mã lỗi module (ví dụ: 'E603', 'G604')
  * @param {string} message - Mô tả lỗi
  */
-const errorResponse = (res, httpStatus, errorCode, message) => {
+const errorResponse = (res, httpStatus, errorCode, message, data = null) => {
   return res.status(httpStatus).json({
     code: errorCode,
     status: httpStatus,
     message,
-    data: null,
+    data,
   });
 };
 

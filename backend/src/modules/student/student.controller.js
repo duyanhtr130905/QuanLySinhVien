@@ -1,6 +1,7 @@
 const studentService = require('./student.service');
 const { successResponse, errorResponse } = require('../../utils/response');
 const { parseFile, buildFile } = require('../../utils/fileFormat');
+const { STUDENT_FILE_COLUMNS, toFileRows, createTemplateRow } = require('./student.fileSchema');
 const asyncHandler = require('../../core/http/asyncHandler');
 const {
   createGetAllHandler,
@@ -327,7 +328,8 @@ const exportOne = asyncHandler(async (req, res) => {
     const student = await studentService.getOneById(id);
     if (!student) return sendError(res, errors.export.notFound);
 
-    const { buffer, contentType, extension } = buildFile([student], type);
+    const lookups = await studentService.getFileLookups();
+    const { buffer, contentType, extension } = buildFile(toFileRows([student], lookups), type, STUDENT_FILE_COLUMNS);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="student-${id}.${extension}"`);
     return res.send(buffer);
@@ -346,7 +348,8 @@ const massExport = asyncHandler(async (req, res) => {
     if (!validator.isValidExportType(type)) return sendError(res, errors.export.invalid);
 
     const students = await studentService.getManyByIds(idlist);
-    const { buffer, contentType, extension } = buildFile(students, type);
+    const lookups = await studentService.getFileLookups();
+    const { buffer, contentType, extension } = buildFile(toFileRows(students, lookups), type, STUDENT_FILE_COLUMNS);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="students-export.${extension}"`);
     return res.send(buffer);
@@ -354,6 +357,52 @@ const massExport = asyncHandler(async (req, res) => {
     error.fallbackCode = 'K600';
     throw error;
   }
+});
+
+const importStudentsPreview = asyncHandler(async (req, res) => {
+  try {
+    if (!req.file) return sendError(res, errors.import.invalidFile, 'Missing import file');
+    const extension = req.file.originalname.split('.').pop().toLowerCase();
+    let rows;
+    try { rows = await parseFile(req.file.buffer, extension); } catch (error) {
+      if (error.message === 'UNSUPPORTED_FORMAT') return sendError(res, errors.import.unsupportedFormat);
+      return sendError(res, errors.import.invalidFile, 'Cannot parse import file');
+    }
+    if (!Array.isArray(rows) || !rows.length) return sendError(res, errors.import.invalidFile, 'Import file has no rows');
+    const preview = await studentService.validateImportDrafts(rows.map((values, index) => ({
+      draftKey: `import-${index + 1}`, rowNumber: index + 2, values,
+    })));
+    return successResponse(res, preview, 'Import preview created without database writes');
+  } catch (error) {
+    error.fallbackCode = 'J600';
+    throw error;
+  }
+});
+
+const importValidate = asyncHandler(async (req, res) => {
+  const preview = await studentService.validateImportDrafts(req.body.drafts);
+  return successResponse(res, preview, 'Import drafts validated');
+});
+
+const importCommit = asyncHandler(async (req, res) => {
+  try {
+    const result = await studentService.commitImportDrafts(req.body.drafts);
+    return successResponse(res, result, 'Student import committed');
+  } catch (error) {
+    if (error.code === 'IMPORT_VALIDATION') return errorResponse(res, 400, errors.import.invalidFile.errorCode, error.message, error.rows);
+    if (error.code === '23505') return errorResponse(res, 409, errors.import.invalidFile.errorCode, 'Duplicate student data');
+    error.fallbackCode = 'J600';
+    throw error;
+  }
+});
+
+const importTemplate = asyncHandler(async (req, res) => {
+  const type = String(req.query.type || 'xlsx').toLowerCase();
+  if (!validator.isValidExportType(type)) return sendError(res, errors.import.unsupportedFormat);
+  const { buffer, contentType, extension } = buildFile([createTemplateRow()], type, STUDENT_FILE_COLUMNS);
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="student-import-template.${extension}"`);
+  return res.send(buffer);
 });
 
 module.exports = {
@@ -372,7 +421,10 @@ module.exports = {
   copyPreview,
   copyValidate,
   copyCommit,
-  importStudents,
+  importStudents: importStudentsPreview,
   exportOne,
   massExport,
 };
+module.exports.importValidate = importValidate;
+module.exports.importCommit = importCommit;
+module.exports.importTemplate = importTemplate;
