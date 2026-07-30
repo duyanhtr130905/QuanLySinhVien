@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useHistory, useLocation } from 'react-router-dom'
 import {
@@ -25,6 +25,7 @@ import {
   getStudentRowKey, getStudentSortOrder, matchesStudentSearch, normalizeStudentRowKeys, toStudentApiIds
 } from '../studentUtils'
 import { getCopyErrorMessage } from '../student-copy/copyUtils'
+import { useShortcut } from 'components/shortcut-components/ShortcutProvider'
 
 const { Search } = Input
 const getCount = value => Array.isArray(value) ? value.length : Number(value) || 0
@@ -64,6 +65,7 @@ const StudentList = () => {
   const [copyingStudentId, setCopyingStudentId] = useState(null)
   const [exportingStudentId, setExportingStudentId] = useState(null)
   const [copyingMany, setCopyingMany] = useState(false)
+  const searchRef = useRef(null)
 
   const loadStudents = (nextQuery = query, nextSelectedRowKeys = selectedRowKeys) => {
     dispatch(fetchStudentList(buildStudentPageParams(nextQuery, nextSelectedRowKeys)))
@@ -545,6 +547,15 @@ const StudentList = () => {
     Modal.confirm({ title: 'Xác nhận xóa sinh viên', content, okText: 'Xóa', okType: 'danger', cancelText: 'Hủy', onOk: executeBulkDelete })
   }
 
+  useShortcut({ scope: 'page', key: '/', group: 'Danh sách và dữ liệu', description: 'Focus tìm kiếm', handler: () => searchRef.current?.focus() })
+  useShortcut({ scope: 'page', alt: true, key: 'n', group: 'Biểu mẫu', description: 'Thêm Sinh viên', handler: () => history.push('/app/student/create') })
+  useShortcut({ scope: 'page', alt: true, key: 'i', group: 'Danh sách và dữ liệu', description: 'Import Sinh viên', handler: openStudentImport })
+  useShortcut({ scope: 'page', alt: true, key: 'x', group: 'Danh sách và dữ liệu', description: 'Export Sinh viên', handler: openStudentExport })
+  useShortcut({ scope: 'page', alt: true, key: 'c', enabled: hasSelection && !copyingMany, group: 'Danh sách và dữ liệu', description: 'Sao chép bản ghi đã chọn', handler: handleBulkCopy })
+  useShortcut({ scope: 'page', primary: true, key: 'a', group: 'Danh sách và dữ liệu', description: 'Chọn trang hiện tại', handler: () => handleSelectAll(true, null, apiRecords) })
+  useShortcut({ scope: 'page', primary: true, shift: true, key: 'a', group: 'Danh sách và dữ liệu', description: 'Bỏ chọn toàn bộ', handler: () => { updateSelection([]); loadStudents(query, []) } })
+  useShortcut({ scope: 'page', key: 'Delete', enabled: hasSelection, group: 'Danh sách và dữ liệu', description: 'Mở xác nhận xóa', handler: confirmBulkDelete })
+
   const columnChooser = (
     <ColumnChooser
       columns={orderedColumnConfig}
@@ -579,7 +590,7 @@ const StudentList = () => {
             <Popover title="Hiện cột" content={columnChooser} trigger="click" placement="bottomRight" visible={columnChooserVisible} onVisibleChange={setColumnChooserVisible} getPopupContainer={() => document.body} overlayClassName="student-column-chooser-overlay" destroyTooltipOnHide>
               <Button icon={<FilterOutlined />}>Hiện cột</Button>
             </Popover>
-            <Search placeholder="Tìm kiếm sinh viên..." defaultValue={query.search} onSearch={handleSearch} onChange={event => !event.target.value && handleSearch('')} style={{ width: 320 }} allowClear enterButton />
+            <Search ref={searchRef} placeholder="Tìm kiếm sinh viên..." defaultValue={query.search} onSearch={handleSearch} onChange={event => !event.target.value && handleSearch('')} style={{ width: 320 }} allowClear enterButton />
             <Button type="primary" shape="circle" icon={<PlusOutlined />} onClick={() => history.push('/app/student/create')} />
           </div>
         </div>
