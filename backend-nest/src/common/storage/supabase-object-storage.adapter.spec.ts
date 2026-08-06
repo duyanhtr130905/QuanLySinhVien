@@ -1,0 +1,12 @@
+import { SupabaseObjectStorageAdapter } from './supabase-object-storage.adapter';
+
+const bucket={upload:jest.fn(),remove:jest.fn(),getPublicUrl:jest.fn()};
+const client={storage:{from:jest.fn(()=>bucket)}};
+
+describe('SupabaseObjectStorageAdapter',()=>{
+  beforeEach(()=>{jest.clearAllMocks();bucket.upload.mockResolvedValue({error:null});bucket.remove.mockResolvedValue({error:null});bucket.getPublicUrl.mockReturnValue({data:{publicUrl:'https://project.supabase.co/storage/v1/object/public/student-attachments/students/a.png'}});});
+  it('uploads only student keys and returns the bucket public URL',async()=>{const storage=new SupabaseObjectStorageAdapter('https://project.supabase.co','service-role-secret',client as never);await storage.upload({key:'students/a.png',body:Buffer.from('x'),contentType:'image/png'});await expect(storage.getPublicUrl('students/a.png')).resolves.toContain('/student-attachments/students/a.png');expect(bucket.upload).toHaveBeenCalledWith('students/a.png',expect.any(Buffer),expect.objectContaining({contentType:'image/png'}));});
+  it('maps a stored public URL back to its own bucket key before removal',async()=>{const storage=new SupabaseObjectStorageAdapter('https://project.supabase.co','service-role-secret',client as never);await storage.delete('https://project.supabase.co/storage/v1/object/public/student-attachments/students/a.png');expect(bucket.remove).toHaveBeenCalledWith(['students/a.png']);});
+  it('refuses invalid origins, buckets, and arbitrary paths without remote deletion',async()=>{const storage=new SupabaseObjectStorageAdapter('https://project.supabase.co','service-role-secret',client as never);await storage.delete('https://other.example/storage/v1/object/public/student-attachments/students/a.png');await storage.delete('https://project.supabase.co/storage/v1/object/public/other/students/a.png');await storage.delete('../students/a.png');expect(bucket.remove).not.toHaveBeenCalled();});
+  it('surfaces Supabase upload/remove errors without exposing the service role key',async()=>{bucket.upload.mockResolvedValueOnce({error:{message:'upload denied'}});bucket.remove.mockResolvedValueOnce({error:{message:'remove denied'}});const storage=new SupabaseObjectStorageAdapter('https://project.supabase.co','service-role-secret',client as never);await expect(storage.upload({key:'students/a.png',body:Buffer.from('x')})).rejects.toThrow('Supabase Storage upload failed: upload denied');await expect(storage.delete('students/a.png')).rejects.toThrow('Supabase Storage remove failed: remove denied');});
+});
