@@ -5,7 +5,7 @@ import {
   type ContractTargetName,
 } from './contract-target';
 
-const DEFAULT_TIMEOUT_MS = 5_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export interface ContractTarget {
   name: ContractTargetName;
