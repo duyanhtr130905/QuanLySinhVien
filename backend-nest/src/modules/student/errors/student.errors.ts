@@ -37,3 +37,11 @@ export const studentUniqueMessage = (constraint?: string): string => ({
   tra_student_email_key: 'Email \u0111\u00e3 t\u1ed3n t\u1ea1i',
   tra_student_username_key: 'Username \u0111\u00e3 t\u1ed3n t\u1ea1i',
 }[constraint ?? ''] ?? 'D\u1eef li\u1ec7u \u0111\u00e3 t\u1ed3n t\u1ea1i (vi ph\u1ea1m r\u00e0ng bu\u1ed9c UNIQUE)');
+
+export const studentCopyException = {
+  invalidId: () => exception(400, 'H601', 'id kh\u00f4ng h\u1ee3p l\u1ec7'),
+  invalidIds: (message = 'idlist kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c r\u1ed7ng') => exception(400, 'H603', message),
+  notFound: (message = 'Kh\u00f4ng t\u00ecm th\u1ea5y sinh vi\u00ean g\u1ed1c') => exception(404, 'H604', message),
+  massNotFound: (ids: unknown[]) => exception(404, 'H604', `Kh\u00f4ng t\u00ecm th\u1ea5y c\u00e1c sinh vi\u00ean g\u1ed1c (ids: ${ids.join(', ')})`),
+  conflict: (message: string) => exception(400, 'H603', message),
+};
