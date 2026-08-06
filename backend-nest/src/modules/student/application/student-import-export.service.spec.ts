@@ -1,0 +1,10 @@
+import { StudentImportExportService } from './student-import-export.service';
+
+const transaction={run:async<T>(work:(client:never)=>Promise<T>)=>work({} as never)};
+const passwords={hash:jest.fn(async(value:string)=>`hash:${value}`)};
+const codecs={get:jest.fn(()=>({encode:jest.fn(async(rows)=>Buffer.from(JSON.stringify(rows))),parse:jest.fn(async()=>[])}))};
+
+describe('StudentImportExportService',()=>{
+  it('exports the canonical schema with an empty password and resolved class/hobby names',async()=>{const pool={query:jest.fn().mockResolvedValueOnce({rows:[{id:1,code:'SV1',fullname:'One',sex:true,class_id:1,email:'one@example.test',username:'one',hobbies:1}]}).mockResolvedValueOnce({rows:[{id:1,code:'C1'}]}).mockResolvedValueOnce({rows:[{id:1,name:'Music',bit_value:1}]})};const service=new StudentImportExportService(pool as never,transaction as never,codecs as never,passwords as never);const file=await service.exportOne(1,'json');const rows=JSON.parse(file.buffer.toString()) as Array<Record<string,unknown>>;expect(Object.keys(rows[0])).toEqual(['code','fullname','dob','gender','class','email','username','password','homecity','address','hobbies','description','hair_color','facebook']);expect(rows[0]).toMatchObject({class:'C1',hobbies:'Music',gender:'Nam',password:''});});
+  it('validates imported rows with batch lookups and does not hash or write',async()=>{const pool={query:jest.fn().mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]})};const service=new StudentImportExportService(pool as never,transaction as never,codecs as never,passwords as never);const result=await service.validate([{draftKey:'import-1',rowNumber:2,values:{code:'SV1',fullname:'One',dob:'01/01/2000',gender:'Nam',email:'one@example.test',username:'one',password:'Valid1!x',hobbies:'Unknown'}}]);expect(result.rows[0]).toMatchObject({draftKey:'import-1',mode:'create',status:'invalid',missingHobbies:['Unknown']});expect(pool.query).toHaveBeenCalledTimes(3);expect(passwords.hash).not.toHaveBeenCalled();});
+});

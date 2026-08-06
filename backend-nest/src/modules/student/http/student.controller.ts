@@ -1,21 +1,27 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, UploadedFile, UploadedFiles, UseFilters, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Res, UploadedFile, UploadedFiles, UseFilters, UseInterceptors } from '@nestjs/common';
 import { AnyFilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { ApiResponseFactory } from '../../../common/http/api-response.factory';
+import { LegacyApiException } from '../../../common/http/legacy-api.exception';
 import { LegacyFallback } from '../../../common/http/legacy-fallback.decorator';
 import { StudentCommandService } from '../application/student-command.service';
 import { StudentCopyService } from '../application/student-copy.service';
+import { StudentImportExportService } from '../application/student-import-export.service';
 import { StudentQueryService } from '../application/student-query.service';
 import { studentMessages } from '../errors/student.errors';
 import { StudentRequestParser } from './student-request.parser';
 import { StudentPageQueryDto } from './dto/student-page-query.dto';
 import { StudentImageMulterFilter } from './student-image-multer.filter';
+import { StudentImportMulterFilter } from './student-import-multer.filter';
 
 const image=FileInterceptor('attachment',{limits:{fileSize:5*1024*1024}});
 const copyImages=AnyFilesInterceptor({limits:{fileSize:5*1024*1024}});
+const importFile=FileInterceptor('file',{storage:memoryStorage(),limits:{fileSize:10*1024*1024}});
 
 @Controller('student')
 export class StudentController {
-  constructor(private readonly queries:StudentQueryService,private readonly commands:StudentCommandService,private readonly copies:StudentCopyService,private readonly parser:StudentRequestParser,private readonly responses:ApiResponseFactory){}
+  constructor(private readonly queries:StudentQueryService,private readonly commands:StudentCommandService,private readonly copies:StudentCopyService,private readonly files:StudentImportExportService,private readonly parser:StudentRequestParser,private readonly responses:ApiResponseFactory){}
   @Get('page') @LegacyFallback('C600') async page(@Query() query:StudentPageQueryDto){return this.responses.success(await this.queries.getPage(this.parser.parsePage(query)),studentMessages.page);}
   @Get('page/:init') @LegacyFallback('C600') async pageInit(@Query() query:StudentPageQueryDto,@Param('init') _init:string){return this.responses.success(await this.queries.getPage(this.parser.parsePage(query)),studentMessages.page);}
   @Get('deleted/page') @LegacyFallback('L600') async deletedPage(@Query() query:StudentPageQueryDto){return this.responses.success(await this.queries.getDeletedPage(this.parser.parsePage(query)),studentMessages.deletedPage);}
@@ -26,6 +32,12 @@ export class StudentController {
   @Post('copy/validate') @HttpCode(HttpStatus.OK) @LegacyFallback('H600') async copyValidate(@Body('drafts') drafts:unknown){return this.responses.success(await this.copies.validate(drafts),'ÄÃ£ kiá»ƒm tra cÃ¡c báº£n sao sinh viÃªn');}
   @Post('copy/commit') @HttpCode(HttpStatus.OK) @UseFilters(StudentImageMulterFilter) @UseInterceptors(copyImages) @LegacyFallback('H600') async copyCommit(@Body('drafts') drafts:unknown,@UploadedFiles() files:Express.Multer.File[]=[]){const parsed=typeof drafts==='string'?JSON.parse(drafts):drafts;const result=await this.copies.commit(parsed,files);return this.responses.success(result,`\u0110\u00e3 t\u1ea1o ${result.created.length} sinh vi\u00ean`);}
   @Post('copy/:id') @HttpCode(HttpStatus.OK) @LegacyFallback('H600') async copyOne(@Param('id') id:string){return this.responses.success(await this.copies.copyOne(this.parser.parseCopyId(id)),'Sao ch\u00e9p sinh vi\u00ean th\u00e0nh c\u00f4ng');}
+  @Get('import/template') @LegacyFallback('J600') async importTemplate(@Query('type') type:unknown,@Res() response:Response){const file=await this.files.template(type);response.setHeader('Content-Type',file.contentType);response.setHeader('Content-Disposition',`attachment; filename="${file.filename}"`);response.send(file.buffer);}
+  @Post('import') @HttpCode(HttpStatus.OK) @UseFilters(StudentImportMulterFilter) @UseInterceptors(importFile) @LegacyFallback('J600') async importPreview(@UploadedFile() file?:Express.Multer.File){if(!file)throw new LegacyApiException({status:400,code:'J604',message:'Missing import file'});return this.responses.success(await this.files.preview(file.buffer,file.originalname),'Import preview created without database writes');}
+  @Post('import/validate') @HttpCode(HttpStatus.OK) @LegacyFallback('J600') async importValidate(@Body('drafts') drafts:unknown){return this.responses.success(await this.files.validate(drafts),'Import drafts validated');}
+  @Post('import/commit') @HttpCode(HttpStatus.OK) @LegacyFallback('J600') async importCommit(@Body('drafts') drafts:unknown){return this.responses.success(await this.files.commitSafe(drafts),'Student import committed');}
+  @Get('export/:id') @LegacyFallback('K600') async exportOne(@Param('id') id:string,@Query('type') type:unknown,@Res() response:Response){const file=await this.files.exportOne(this.parser.parseId(id),type);response.setHeader('Content-Type',file.contentType);response.setHeader('Content-Disposition',`attachment; filename="${file.filename}"`);response.send(file.buffer);}
+  @Post('export') @HttpCode(HttpStatus.OK) @LegacyFallback('K600') async exportMany(@Body('idlist') ids:unknown,@Body('type') type:unknown,@Res() response:Response){if(!Array.isArray(ids)||!ids.length)return this.responses.error(400,'K601','idlist không hợp lệ hoặc rỗng');const file=await this.files.exportMany(ids,type);response.setHeader('Content-Type',file.contentType);response.setHeader('Content-Disposition',`attachment; filename="${file.filename}"`);response.send(file.buffer);}
   @Get() @LegacyFallback('B600') async all(@Query('columnlist') columnlist?:string){return this.responses.success(await this.queries.getAll(columnlist),studentMessages.list);}
   @Post() @HttpCode(HttpStatus.OK) @UseFilters(StudentImageMulterFilter) @UseInterceptors(image) @LegacyFallback('E600') async create(@Body() body:Record<string,unknown>,@UploadedFile() file?:Express.Multer.File){const input=this.parser.parseWrite(body,true,await this.commands.activeHobbyMask());return this.responses.success(await this.commands.create(input,file),studentMessages.create);}
   @Get(':id') @LegacyFallback('D600') async detail(@Param('id') id:string){return this.responses.success(await this.queries.getDetail(this.parser.parseId(id)),studentMessages.detail);}

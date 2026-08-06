@@ -11,7 +11,7 @@ Phase 0 enumerated 47 legacy routes in [the API contract baseline](../../backend
 | Student read core | Yes | Yes | Active |
 | Student write/trash/image | Yes | Yes | Active |
 | Student copy | Yes | Yes | Active |
-| Student import/export | Yes | Not migrated | Pending |
+| Student import/export | Yes | Yes | Active |
 
 The active global suite checks `GET /` for the exact legacy health payload and `GET /api` for a `404` status. The active Hobby suite checks the active list, validation, create/duplicate/delete/not-found flow, and legacy envelopes independently against every selected HTTP target, so matching responses between two targets alone is never treated as sufficient evidence of compliance.
 
@@ -25,6 +25,8 @@ Student read core is active for the active list, page/page-init, and detail rout
 
 Student write/trash/image is active for create, validation/unique errors, update without a password replacement, soft delete, deleted paging, restore, and deleted-only permanent deletion. Write fixtures use the exact `ct-student-write-*` prefix; cleanup first follows the legacy soft-delete trigger then permanently deletes the same ID, and asserts no fixture row remains. Unit tests cover password hashing, duplicate batch IDs, create/update storage compensation, post-commit old-image cleanup, and shared-image retention.
 
-Student copy is active for single and bulk copy plus preview, validate, and commit. The suite verifies fixed copy-route dispatch, duplicate source-ID preview behavior, no writes for preview/validate, batch validation errors, password exclusion, source hash and shared attachment reuse at commit, plus rechecks for source loss or a uniqueness conflict between preview and commit. Fixture cleanup is exact-ID based and asserts that no active or soft-deleted Student copy fixture remains. Student import/export remains Pending.
+Student copy is active for single and bulk copy plus preview, validate, and commit. The suite verifies fixed copy-route dispatch, duplicate source-ID preview behavior, no writes for preview/validate, batch validation errors, password exclusion, source hash and shared attachment reuse at commit, plus rechecks for source loss or a uniqueness conflict between preview and commit. Fixture cleanup is exact-ID based and asserts that no active or soft-deleted Student copy fixture remains.
+
+Student import/export is active for templates, single and bulk exports, and the preview, validate, and commit import flow. File fixtures use the exact `ct-student-file-*` prefix, verify canonical file columns and password exclusion, and clean exact IDs through active and soft-deleted states.
 
 No skipped placeholder tests are recorded for modules that have not yet migrated. New module contract suites will be added only when their NestJS endpoints exist.
