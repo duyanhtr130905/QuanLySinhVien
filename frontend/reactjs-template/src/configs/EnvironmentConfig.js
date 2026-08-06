@@ -1,26 +1,5 @@
-const dev = {
-  API_ENDPOINT_URL: 'http://localhost:3000'
-};
-
-const prod = {
-  API_ENDPOINT_URL: 'https://api.prod.com'
-};
-
-const test = {
-  API_ENDPOINT_URL: 'https://api.test.com'
-};
-
-const getEnv = () => {
-	switch (process.env.NODE_ENV) {
-		case 'development':
-			return dev
-		case 'production':
-			return prod
-		case 'test':
-			return test
-		default:
-			break;
-	}
+// Keep the existing local legacy backend as the safe default until production cutover.
+// Set REACT_APP_API_BASE_URL=http://localhost:3002 to run the frontend against Nest.
+export const env = {
+  API_ENDPOINT_URL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:3000',
 }
-
-export const env = getEnv()

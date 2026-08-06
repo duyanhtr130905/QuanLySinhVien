@@ -1,5 +1,15 @@
 # Getting Started with Create React App
 
+## Backend selection
+
+The frontend has one API base-URL setting. It keeps `http://localhost:3000` as the default local legacy backend until a production cutover is approved. To validate against NestJS on port 3002, copy `.env.example` to `.env.local` and set:
+
+```
+REACT_APP_API_BASE_URL=http://localhost:3002
+```
+
+Restart the frontend after changing a `REACT_APP_*` value. Do not commit real credentials to frontend environment files.
+
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 ## Available Scripts
