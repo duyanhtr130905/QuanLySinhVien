@@ -1,0 +1,4 @@
+import { LegacyApiException } from '../../../common/http/legacy-api.exception';
+const exception = (status: number, code: string, message: string) => new LegacyApiException({ status, code, message });
+export const studentMessages = { list: 'L\u1ea5y danh s\u00e1ch sinh vi\u00ean th\u00e0nh c\u00f4ng', page: 'L\u1ea5y danh s\u00e1ch sinh vi\u00ean theo trang th\u00e0nh c\u00f4ng', detail: 'L\u1ea5y chi ti\u1ebft sinh vi\u00ean th\u00e0nh c\u00f4ng' } as const;
+export const studentException = { invalidPage: () => exception(400, 'C601', 'S\u1ed1 trang kh\u00f4ng h\u1ee3p l\u1ec7'), invalidSize: () => exception(400, 'C602', 'C\u1ee1 trang kh\u00f4ng h\u1ee3p l\u1ec7'), invalidId: () => exception(400, 'D601', 'id kh\u00f4ng h\u1ee3p l\u1ec7'), notFound: () => exception(404, 'D604', 'Kh\u00f4ng t\u00ecm th\u1ea5y sinh vi\u00ean') };

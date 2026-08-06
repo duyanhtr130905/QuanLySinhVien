@@ -8,8 +8,10 @@ Phase 0 enumerated 47 legacy routes in [the API contract baseline](../../backend
 | Hobby | Yes | Yes | Active |
 | Class core | Yes | Yes | Active |
 | Class advanced | Yes | Yes | Active |
-| Student core | Yes | Not migrated | Pending |
-| Student advanced | Yes | Not migrated | Pending |
+| Student read core | Yes | Yes | Active |
+| Student write/trash | Yes | Not migrated | Pending |
+| Student copy | Yes | Not migrated | Pending |
+| Student import/export | Yes | Not migrated | Pending |
 
 The active global suite checks `GET /` for the exact legacy health payload and `GET /api` for a `404` status. The active Hobby suite checks the active list, validation, create/duplicate/delete/not-found flow, and legacy envelopes independently against every selected HTTP target, so matching responses between two targets alone is never treated as sufficient evidence of compliance.
 
@@ -18,5 +20,7 @@ Hobby in-use protection and bit exhaustion are covered by NestJS unit tests. The
 Class core active coverage includes list, page, detail, create, immutable-code update, single delete, and non-blocked mass delete. FK-blocked single delete and partial `blockedIds` remain unit-test-only until a safe Student fixture/cross-module test is available.
 
 Class advanced is active: membership, copy, row-by-row import, and binary export are covered by dual-target contracts. Membership fixtures use explicitly enabled, exact-ID cleanup; copy/import fixtures likewise clean only records they created. Student remains Pending.
+
+Student read core is active for the active list, page/page-init, and detail routes. The dual-target suite creates exact-ID `ct-student-read-*` fixtures and verifies active-only filtering, legacy page/search/order behavior, not-found mapping, and password exclusion. Student writes, trash, copy, and file flows remain Pending.
 
 No skipped placeholder tests are recorded for modules that have not yet migrated. New module contract suites will be added only when their NestJS endpoints exist.

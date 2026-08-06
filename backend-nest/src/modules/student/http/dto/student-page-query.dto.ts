@@ -1,0 +1,1 @@
+export class StudentPageQueryDto { page?: string; size?: string; order?: string; search?: string; columnlist?: string; toplist?: string; exclude_ids?: string | string[]; ['exclude_ids[]']?: string | string[]; }

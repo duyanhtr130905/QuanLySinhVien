@@ -1,0 +1,2 @@
+import { StudentQueryService } from './student-query.service';
+describe('StudentQueryService',()=>{it('returns active detail and maps a missing/deleted record to D604',async()=>{const repository={findAll:jest.fn(),findPage:jest.fn(),findActiveById:jest.fn().mockResolvedValue(null)};const service=new StudentQueryService(repository as never);await expect(service.getDetail(1)).rejects.toMatchObject({code:'D604'});repository.findActiveById.mockResolvedValue({id:'1',username:'u'});await expect(service.getDetail(1)).resolves.toEqual({id:'1',username:'u'});});});

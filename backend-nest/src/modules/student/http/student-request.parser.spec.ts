@@ -1,0 +1,2 @@
+import { StudentRequestParser } from './student-request.parser';
+describe('StudentRequestParser',()=>{const parser=new StudentRequestParser();it('keeps legacy page parsing, omitted invalid pins, and exclude aliases',()=>{expect(parser.parsePage({page:'1x',size:'2',toplist:'3,bad',exclude_ids:['4','x']})).toEqual(expect.objectContaining({page:1,size:2,toplist:[3],excludeIds:[4]}));expect(()=>parser.parsePage({page:'0',size:'2'})).toThrow(expect.objectContaining({code:'C601'}));expect(()=>parser.parseId('bad')).toThrow(expect.objectContaining({code:'D601'}));});});
