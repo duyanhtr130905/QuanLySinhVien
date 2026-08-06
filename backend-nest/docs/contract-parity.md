@@ -7,7 +7,7 @@ Phase 0 enumerated 47 legacy routes in [the API contract baseline](../../backend
 | Health/global | Yes | Yes | Active |
 | Hobby | Yes | Yes | Active |
 | Class core | Yes | Yes | Active |
-| Class advanced | Yes | Not migrated | Pending |
+| Class advanced | Yes | Yes | Active |
 | Student core | Yes | Not migrated | Pending |
 | Student advanced | Yes | Not migrated | Pending |
 
@@ -16,5 +16,7 @@ The active global suite checks `GET /` for the exact legacy health payload and `
 Hobby in-use protection and bit exhaustion are covered by NestJS unit tests. They are intentionally not black-box fixture tests yet: the contract harness does not create Student records or consume all 31 hobby bits in a shared database.
 
 Class core active coverage includes list, page, detail, create, immutable-code update, single delete, and non-blocked mass delete. FK-blocked single delete and partial `blockedIds` remain unit-test-only until a safe Student fixture/cross-module test is available.
+
+Class advanced is active: membership, copy, row-by-row import, and binary export are covered by dual-target contracts. Membership fixtures use explicitly enabled, exact-ID cleanup; copy/import fixtures likewise clean only records they created. Student remains Pending.
 
 No skipped placeholder tests are recorded for modules that have not yet migrated. New module contract suites will be added only when their NestJS endpoints exist.

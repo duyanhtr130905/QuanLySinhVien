@@ -46,8 +46,20 @@ export class ClassRequestParser {
     return [...ids];
   }
 
+  parseMembershipId(value: string): number { const id = this.legacyPositiveInt(value); if (id === null) throw classException.invalidMembershipId(); return id; }
+  parseMembershipPage(query: ClassPageQueryDto): ClassPageQuery { const page = this.legacyPositiveInt(query.page); if (page === null) throw classException.invalidMembershipPage(); const size = this.legacyPositiveInt(query.size); if (size === null) throw classException.invalidMembershipSize(); return { page, size, order: query.order, search: query.search, columnlist: query.columnlist, toplist: [] }; }
+  parseStudentIds(value: unknown): unknown[] { if (!Array.isArray(value) || value.length === 0) throw classException.invalidStudentIds(); return value; }
+  parseCopyId(value: string): number { const id = this.legacyPositiveInt(value); if (id === null) throw classException.invalidCopyId(); return id; }
+  parseCopyIds(value: unknown): unknown[] { if (!Array.isArray(value) || value.length === 0) throw classException.invalidCopyDrafts(); return value; }
+  parseExportId(value: string): number { const id = this.legacyPositiveInt(value); if (id === null) throw classException.invalidExportId(); return id; }
+  parseExportIds(value: unknown): number[] { if (!Array.isArray(value) || value.length === 0) throw classException.invalidExportIds(); const ids = value.map((item) => this.strictPositiveInt(item)); if (ids.some((id) => id === null)) throw classException.invalidExportIds(); return ids as number[]; }
+  parseCopyDrafts(value: unknown): CopyDraft[] { if (!Array.isArray(value) || value.length === 0) throw classException.invalidCopyDrafts(); const keys = new Set<string>(); return value.map((draft, index) => { const candidate = draft as Partial<CopyDraft>; const sourceId = Number(candidate?.sourceId); const draftKey = typeof candidate?.draftKey === 'string' ? candidate.draftKey.trim() : ''; if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !draftKey || keys.has(draftKey) || !candidate?.values || typeof candidate.values !== 'object') throw classException.invalidCopyDrafts(`Draft ${index + 1} không hợp lệ`); keys.add(draftKey); return { draftKey, sourceId, values: this.parseCreate(candidate.values as CreateClassDto) }; }); }
+
   private legacyPositiveInt(value: unknown): number | null {
     const parsed = Number.parseInt(value as string, 10);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
   }
+  private strictPositiveInt(value: unknown): number | null { if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null; if (typeof value === 'string' && /^[1-9]\d*$/.test(value)) { const parsed = Number(value); return Number.isSafeInteger(parsed) ? parsed : null; } return null; }
 }
+
+export interface CopyDraft { draftKey: string; sourceId: number; values: CreateClassInput; }
