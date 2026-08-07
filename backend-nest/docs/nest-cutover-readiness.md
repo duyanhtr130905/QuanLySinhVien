@@ -102,9 +102,10 @@ corrective patch) restores **NODE_ENV-specific fallbacks** identical to pre-Phas
 ## Runtime and smoke evidence
 
 - Health: `GET /` is covered by the global contract.
-- CORS: Nest enables CORS via `app.enableCors()` with **no origin restriction**. This is permissive
-  and is **NOT production-ready**. CORS must be restricted to production origins as part of a
-  separate deployment hardening step before any production cutover.
+- CORS: Nest enforces a configurable origin allowlist via `CORS_ALLOWED_ORIGINS` (comma-separated).
+  The default (`http://localhost:3001`) covers local development. Production sets this to the real
+  frontend origin(s). Requests with no `Origin` header (server-to-server, health checks) are always
+  allowed. `credentials: true` is set. Preflights from unlisted origins receive a non-2xx response.
 - PostgreSQL: both targets use the same configured `DATABASE_URL`; contract fixtures exercise
   transactions and clean exact IDs.
 - Storage: the Supabase adapter remains injected for Student images; copy uses legacy shared-URL
@@ -129,8 +130,9 @@ and soft-deleted records.
 
 ## Required environment
 
-- Nest: `DATABASE_URL`, optional `PORT` (default `3002`), and existing Supabase Storage
-  configuration when image flows are exercised.
+- Nest: `DATABASE_URL`, optional `PORT` (default `3002`), `CORS_ALLOWED_ORIGINS` (comma-separated;
+  default `http://localhost:3001` for local dev; set to production frontend origin(s) before
+  cutover), and existing Supabase Storage configuration when image flows are exercised.
 - Frontend: set `REACT_APP_API_BASE_URL=http://localhost:3002` in
   `frontend/reactjs-template/.env.local` for Nest validation; leave it unset for the development
   fallback (`http://localhost:3000`). Do not commit `.env.local`.
@@ -149,9 +151,8 @@ Known risks:
 - The unchanged frontend React 17 toolchain has pre-existing dependency advisories that need a
   separately scoped upgrade.
 - Contract integration can take longer than five seconds with remote PostgreSQL/XLSX.
-- **CORS is permissive (`app.enableCors()` with no restriction) and MUST be restricted to
-  production origins before any production cutover. This is an operational hardening follow-up,
-  not a functional parity blocker.**
+- CORS is now restricted via `CORS_ALLOWED_ORIGINS`; the remaining operational step before
+  production cutover is to inject the correct production origin value in the deployment environment.
 
 ---
 
