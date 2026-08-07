@@ -17,4 +17,11 @@ HobbyService.create = function (name) {
   })
 }
 
+HobbyService.destroy = function (id) {
+  return fetch({
+    url: `/hobby/${id}`,
+    method: 'delete',
+  })
+}
+
 export default HobbyService
