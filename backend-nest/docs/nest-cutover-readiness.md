@@ -105,7 +105,7 @@ corrective patch) restores **NODE_ENV-specific fallbacks** identical to pre-Phas
 - CORS: Nest enforces a configurable origin allowlist via `CORS_ALLOWED_ORIGINS` (comma-separated).
   The default (`http://localhost:3001`) covers local development. Production sets this to the real
   frontend origin(s). Requests with no `Origin` header (server-to-server, health checks) are always
-  allowed. `credentials: true` is set. Preflights from unlisted origins receive a non-2xx response.
+  allowed. Unlisted origins receive no CORS headers and do not trigger a server error.
 - PostgreSQL: both targets use the same configured `DATABASE_URL`; contract fixtures exercise
   transactions and clean exact IDs.
 - Storage: the Supabase adapter remains injected for Student images; copy uses legacy shared-URL

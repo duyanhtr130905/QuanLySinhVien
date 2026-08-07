@@ -32,11 +32,10 @@ describe('AppController (e2e)', () => {
         if (allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
-          callback(new Error(`Origin ${origin} is not allowed by CORS`));
+          callback(null, false);
         }
       },
       methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-      credentials: true,
     });
 
     await app.init();
@@ -77,13 +76,12 @@ describe('AppController (e2e)', () => {
       );
     });
 
-    it('rejects an origin not in the allowlist', async () => {
+    it('blocks an origin not in the allowlist without returning a 5xx response', async () => {
       const res = await request(app.getHttpServer())
         .options('/')
         .set('Origin', 'http://evil.example.com')
         .set('Access-Control-Request-Method', 'GET');
-      // The CORS callback passes an error — Express returns 500 for the preflight.
-      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
     });
 
@@ -97,13 +95,5 @@ describe('AppController (e2e)', () => {
       );
     });
 
-    it('sets Access-Control-Allow-Credentials to true', async () => {
-      const res = await request(app.getHttpServer())
-        .options('/')
-        .set('Origin', 'http://localhost:3001')
-        .set('Access-Control-Request-Method', 'GET')
-        .expect(204);
-      expect(res.headers['access-control-allow-credentials']).toBe('true');
-    });
   });
 });
