@@ -4,7 +4,7 @@ import { PG_POOL } from '../../../common/database/database.tokens';
 import { PgErrorTranslator } from '../../../common/database/pg-error-translator';
 import type { PgExecutor } from '../../../common/database/pg-executor.type';
 import type { Student } from '../domain/student.entity';
-import type { StudentPageQuery, StudentWriteInput } from '../http/student-request.parser';
+import type { StudentPageQuery, StudentWriteInput } from '../domain/student.contracts';
 
 const columns=['id','code','fullname','dob','sex','homecity','address','hair_color','email','facebook','class_id','username','description','hobbies','attachment','created_at','updated_at','deleted_at'] as const;
 const aliases:Record<string,string>={id:'id',co:'code',fn:'fullname',do:'dob',sx:'sex',hc:'homecity',ad:'address',hr:'hair_color',em:'email',fb:'facebook',ci:'class_id',un:'username',de:'description',ca:'created_at',ua:'updated_at',da:'deleted_at'};

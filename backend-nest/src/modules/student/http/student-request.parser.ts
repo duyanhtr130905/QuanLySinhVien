@@ -1,28 +1,37 @@
 import { Injectable } from '@nestjs/common';
-import { studentException } from '../errors/student.errors';
-import { studentCopyException } from '../errors/student.errors';
+import type { StudentPageQuery, StudentWriteInput } from '../domain/student.contracts';
+import { StudentWritePolicy } from '../domain/student-write.policy';
+import { studentCopyException, studentException } from '../errors/student.errors';
 import type { StudentPageQueryDto } from './dto/student-page-query.dto';
-
-export interface StudentPageQuery { page:number; size:number; order?:string; search?:string; columnlist?:string; toplist:number[]; excludeIds:number[]; }
-export interface StudentWriteInput { code?:string; fullname?:string; dob?:unknown; sex?:unknown; homecity?:string; address?:string; hair_color?:string; email?:string; facebook?:string|null; class_id?:number|null; username?:string; password?:string; description?:string; hobbies?:number; attachment?:string|null; }
-
-const email = /^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/;
-const facebook = /^https?:\/\/[0-9a-zA-Z.\-_]+$/;
-const password = /^(?=.*[0-9])(?=.*[A-Z])(?=.*[a-z])(?=.*[^A-Za-z0-9\s]).{8,}$/;
 
 @Injectable()
 export class StudentRequestParser {
-  parsePage(query: StudentPageQueryDto): StudentPageQuery { const page=this.positive(query.page); if(page===null)throw studentException.invalidPage(); const size=this.positive(query.size);if(size===null)throw studentException.invalidSize();const parse=(raw:unknown)=>this.values(raw).map((v)=>this.positive(v)).filter((v):v is number=>v!==null); return {page,size,order:query.order,search:query.search,columnlist:query.columnlist,toplist:parse(query.toplist),excludeIds:parse(query.exclude_ids??query['exclude_ids[]'])}; }
-  parseId(value: unknown):number{const id=this.positive(value);if(id===null)throw studentException.invalidId();return id;}
-  parseUpdateId(value: unknown):number{const id=this.positive(value);if(id===null)throw studentException.updateInvalidId();return id;}
-  parseDestroyId(value: unknown):number{const id=this.positive(value);if(id===null)throw studentException.destroyInvalidId();return id;}
-  parseDestroyIds(value: unknown):unknown[]{if(!Array.isArray(value)||value.length===0)throw studentException.destroyInvalidIds();return [...value];}
-  parseTrashIds(value: unknown):number[]{if(!Array.isArray(value)||value.length===0)throw studentException.trashInvalidIds();const ids=[...new Set(value.map((item)=>this.strictPositive(item)).filter((id):id is number=>id!==null))];if(!ids.length)throw studentException.trashInvalidIds();return ids;}
-  parseCopyId(value:unknown):number{const id=this.positive(value);if(id===null)throw studentCopyException.invalidId();return id;}
-  parseCopyIds(value:unknown):unknown[]{if(!Array.isArray(value)||value.length===0)throw studentCopyException.invalidIds();return value;}
-  parseWrite(body: Record<string, unknown> | undefined, create: boolean, activeMask: number):StudentWriteInput { const raw={...(body??{})}; if(typeof raw.sex==='string')raw.sex=raw.sex==='true'?true:raw.sex==='false'?false:null; if(typeof raw.class_id==='string'){const id=Number.parseInt(raw.class_id,10);raw.class_id=raw.class_id===''||raw.class_id==='-1'||Number.isNaN(id)?null:id;} if(typeof raw.hobbies==='string'){const value=Number.parseInt(raw.hobbies,10);raw.hobbies=raw.hobbies===''||Number.isNaN(value)?0:value;} const input:StudentWriteInput={}; for(const key of ['code','fullname','homecity','address','hair_color','email','username','password','description'] as const){if(raw[key]!==undefined)input[key]=typeof raw[key]==='string'?raw[key]:String(raw[key]);} for(const key of ['dob','sex','facebook','class_id','hobbies'] as const){if(raw[key]!==undefined)input[key]=raw[key] as never;} this.validate(input,create,activeMask); return input; }
-  private validate(input:StudentWriteInput,create:boolean,activeMask:number){const required=(key:keyof StudentWriteInput)=>create&&(!input[key]||typeof input[key]!=='string'||input[key].trim()==='');if(required('code'))throw studentException.createValidation('code l\u00e0 b\u1eaft bu\u1ed9c');if(required('fullname'))throw studentException.createValidation('fullname l\u00e0 b\u1eaft bu\u1ed9c');if(required('email'))throw studentException.createValidation('email l\u00e0 b\u1eaft bu\u1ed9c');if(required('username'))throw studentException.createValidation('username l\u00e0 b\u1eaft bu\u1ed9c');if(required('password'))throw studentException.createValidation('password l\u00e0 b\u1eaft bu\u1ed9c'); const fail=(message:string)=>{throw create?studentException.createValidation(message):studentException.updateValidation(message);};if(input.code!==undefined&&input.code.length>50)fail('code kh\u00f4ng \u0111\u01b0\u1ee3c v\u01b0\u1ee3t qu\u00e1 50 k\u00fd t\u1ef1');if(input.username!==undefined&&input.username.length>50)fail('username kh\u00f4ng \u0111\u01b0\u1ee3c v\u01b0\u1ee3t qu\u00e1 50 k\u00fd t\u1ef1');if(input.fullname!==undefined&&(input.fullname.trim()===''||input.fullname.length>30))fail(input.fullname.trim()===''?'fullname kh\u00f4ng \u0111\u01b0\u1ee3c \u0111\u1ec3 tr\u1ed1ng':'fullname kh\u00f4ng \u0111\u01b0\u1ee3c v\u01b0\u1ee3t qu\u00e1 30 k\u00fd t\u1ef1');for(const [key,max] of [['homecity',100],['address',100],['hair_color',7]] as const){if(input[key]!==undefined&&input[key]!.length>max)fail(`${key} kh\u00f4ng \u0111\u01b0\u1ee3c v\u01b0\u1ee3t qu\u00e1 ${max} k\u00fd t\u1ef1`);}if(input.email!==undefined&&(input.email.length>256||!email.test(input.email)))fail(input.email.length>256?'email kh\u00f4ng \u0111\u01b0\u1ee3c v\u01b0\u1ee3t qu\u00e1 256 k\u00fd t\u1ef1':'email kh\u00f4ng \u0111\u00fang \u0111\u1ecbnh d\u1ea1ng');if(input.facebook!==undefined&&input.facebook!==null&&input.facebook!==''&&(typeof input.facebook!=='string'||input.facebook.length>256||!facebook.test(input.facebook)))fail('facebook ph\u1ea3i l\u00e0 URL h\u1ee3p l\u1ec7 (http/https)');if(input.password!==undefined&&input.password!==''&&!password.test(input.password))fail('password ph\u1ea3i c\u00f3 \u00edt nh\u1ea5t 8 k\u00fd t\u1ef1, g\u1ed3m ch\u1eef hoa, ch\u1eef th\u01b0\u1eddng, s\u1ed1 v\u00e0 k\u00fd t\u1ef1 \u0111\u1eb7c bi\u1ec7t');if(input.hobbies!==undefined&&(!Number.isInteger(input.hobbies)||input.hobbies<0||(input.hobbies&~activeMask)!==0))fail('hobbies ch\u1ee9a gi\u00e1 tr\u1ecb kh\u00f4ng h\u1ee3p l\u1ec7 (bit hobby kh\u00f4ng t\u1ed3n t\u1ea1i ho\u1eb7c \u0111\u00e3 inactive)'); }
-  private positive(value:unknown):number|null{const parsed=Number.parseInt(String(Array.isArray(value)?value[0]:value),10);return Number.isInteger(parsed)&&parsed>0?parsed:null;}
-  private strictPositive(value:unknown):number|null{if(typeof value==='number')return Number.isSafeInteger(value)&&value>0?value:null;if(typeof value==='string'&&/^[1-9]\d*$/.test(value)){const parsed=Number(value);return Number.isSafeInteger(parsed)?parsed:null;}return null;}
-  private values(value:unknown):unknown[]{if(value===undefined||value==='')return[];return Array.isArray(value)?value:String(value).split(',');}
+  private readonly writes = new StudentWritePolicy();
+
+  parsePage(query: StudentPageQueryDto): StudentPageQuery {
+    const page = this.positive(query.page);
+    if (page === null) throw studentException.invalidPage();
+    const size = this.positive(query.size);
+    if (size === null) throw studentException.invalidSize();
+    const parse = (raw: unknown) => this.values(raw).map((value) => this.positive(value)).filter((value): value is number => value !== null);
+    return { page, size, order: query.order, search: query.search, columnlist: query.columnlist, toplist: parse(query.toplist), excludeIds: parse(query.exclude_ids ?? query['exclude_ids[]']) };
+  }
+
+  parseId(value: unknown): number { const id = this.positive(value); if (id === null) throw studentException.invalidId(); return id; }
+  parseUpdateId(value: unknown): number { const id = this.positive(value); if (id === null) throw studentException.updateInvalidId(); return id; }
+  parseDestroyId(value: unknown): number { const id = this.positive(value); if (id === null) throw studentException.destroyInvalidId(); return id; }
+  parseDestroyIds(value: unknown): unknown[] { if (!Array.isArray(value) || value.length === 0) throw studentException.destroyInvalidIds(); return [...value]; }
+  parseTrashIds(value: unknown): number[] {
+    if (!Array.isArray(value) || value.length === 0) throw studentException.trashInvalidIds();
+    const ids = [...new Set(value.map((item) => this.strictPositive(item)).filter((id): id is number => id !== null))];
+    if (!ids.length) throw studentException.trashInvalidIds();
+    return ids;
+  }
+  parseCopyId(value: unknown): number { const id = this.positive(value); if (id === null) throw studentCopyException.invalidId(); return id; }
+  parseCopyIds(value: unknown): unknown[] { if (!Array.isArray(value) || value.length === 0) throw studentCopyException.invalidIds(); return value; }
+  parseWrite(body: Record<string, unknown> | undefined, create: boolean, activeMask: number): StudentWriteInput { return this.writes.parse(body, create, activeMask); }
+
+  private positive(value: unknown): number | null { const parsed = Number.parseInt(String(Array.isArray(value) ? value[0] : value), 10); return Number.isInteger(parsed) && parsed > 0 ? parsed : null; }
+  private strictPositive(value: unknown): number | null { if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null; if (typeof value === 'string' && /^[1-9]\d*$/.test(value)) { const parsed = Number(value); return Number.isSafeInteger(parsed) ? parsed : null; } return null; }
+  private values(value: unknown): unknown[] { if (value === undefined || value === '') return []; return Array.isArray(value) ? value : String(value).split(','); }
 }
