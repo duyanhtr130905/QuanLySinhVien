@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { CLASS_MEMBERSHIP_PERSISTENCE, CLASS_TRANSACTION, type ClassMembershipPersistencePort, type ClassTransactionPort } from '../domain/class-persistence.port';
+import { CLASS_MEMBERSHIP_PERSISTENCE, CLASS_TRANSACTION, type ClassMembershipPersistencePort, type ClassTransactionPort } from './ports/class-persistence.port';
 import type { ClassPageQuery } from './class.contracts';
 import { classApplicationException as classException } from './class-application.errors';
 

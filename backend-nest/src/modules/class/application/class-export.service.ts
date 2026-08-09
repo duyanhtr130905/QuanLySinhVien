@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { FileCodecRegistry } from '../../../common/files/file-codec.registry';
 import type { FileFormat } from '../../../common/files/file-format.type';
-import { CLASS_EXPORT_PERSISTENCE, type ClassExportPersistencePort } from '../domain/class-persistence.port';
+import { CLASS_EXPORT_PERSISTENCE, type ClassExportPersistencePort } from './ports/class-persistence.port';
 import { classApplicationException as classException } from './class-application.errors';
 
 const types = ['csv', 'xlsx', 'json', 'xml'] as const;

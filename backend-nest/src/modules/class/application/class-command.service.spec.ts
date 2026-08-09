@@ -1,4 +1,4 @@
-import { ClassCodeConflictError, ClassDeleteBlockedError, type ClassRepositoryPort } from '../domain/class-persistence.port';
+import { ClassCodeConflictError, ClassDeleteBlockedError, type ClassRepositoryPort } from './ports/class-persistence.port';
 import { ClassCommandService } from './class-command.service';
 describe('ClassCommandService', () => {
   const subject = () => { const repository = { create: jest.fn(), updateLegacy: jest.fn(), existsById: jest.fn(), deleteById: jest.fn(), deleteManyPartial: jest.fn() }; return { repository, service: new ClassCommandService(repository as unknown as ClassRepositoryPort) }; };

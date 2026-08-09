@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 describe('Class application architecture', () => {
@@ -9,6 +9,13 @@ describe('Class application architecture', () => {
     for (const file of services) {
       const source = readFileSync(join(__dirname, file), 'utf8');
       for (const pattern of forbidden) expect(source).not.toMatch(pattern);
+    }
+  });
+
+  it('keeps the Class domain independent from application contracts and ports', () => {
+    const domain = join(__dirname, '..', 'domain');
+    for (const file of readdirSync(domain).filter((entry) => entry.endsWith('.ts'))) {
+      expect(readFileSync(join(domain, file), 'utf8')).not.toMatch(/from\s+['"][^'"]*application\//);
     }
   });
 });

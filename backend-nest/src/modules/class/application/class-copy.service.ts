@@ -2,9 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   CLASS_COPY_PERSISTENCE,
   CLASS_TRANSACTION,
+  ClassCodeConflictError,
   type ClassCopyPersistencePort,
   type ClassTransactionPort,
-} from '../domain/class-persistence.port';
+} from './ports/class-persistence.port';
 import type { CopyDraft } from './class.contracts';
 import { classApplicationException as classException } from './class-application.errors';
 
@@ -18,7 +19,7 @@ export class ClassCopyService {
   async copyOne(id: number) {
     const source = await this.repository.findForCopy(id);
     if (!source) throw classException.copyNotFound();
-    return this.repository.insertCopy({ code: await this.nextCode(source.code), name: source.name, description: source.description });
+    return this.repository.insertCopy({ code: await this.nextCode(source.code), name: source.name, description: source.description }).catch((error) => { throw this.mapPersistenceError(error); });
   }
 
   async copyMany(values: unknown[]) {
@@ -33,7 +34,7 @@ export class ClassCopyService {
       }
       if (!created.length && notFound.length) throw classException.copyNotFound(`Không tìm thấy các lớp gốc (ids: ${notFound.join(', ')})`);
       return { created, notFound };
-    });
+    }).catch((error) => { throw this.mapPersistenceError(error); });
   }
 
   async preview(values: unknown[]) {
@@ -89,12 +90,17 @@ export class ClassCopyService {
       if (missing) throw classException.copyNotFound(`Không tìm thấy lớp gốc ${missing.sourceId}`);
       const records = await this.repository.insertCopyDrafts(drafts, transaction);
       return { created: drafts.map((draft, index) => ({ draftKey: draft.draftKey, record: records[index] })) };
-    });
+    }).catch((error) => { throw this.mapPersistenceError(error); });
   }
 
   private async nextCode(code: string, transaction?: Parameters<ClassCopyPersistencePort['codeExists']>[1]): Promise<string> {
     for (const candidate of this.candidates(code)) if (!await this.repository.codeExists(candidate, transaction)) return candidate;
     throw classException.copyDuplicate('Không thể tạo mã lớp duy nhất');
+  }
+
+  private mapPersistenceError(error: unknown): unknown {
+    if (error instanceof ClassCodeConflictError) return classException.copyDuplicate('Mã lớp (code) đã tồn tại');
+    return error;
   }
 
   private candidates(value: string): string[] {

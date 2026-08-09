@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PgTransactionManager } from '../../../common/database/pg-transaction-manager';
-import type { ClassPersistenceTransaction, ClassTransactionPort } from '../domain/class-persistence.port';
+import type { ClassPersistenceTransaction, ClassTransactionPort } from '../application/ports/class-persistence.port';
 
 @Injectable()
 export class ClassPgTransactionAdapter implements ClassTransactionPort {

@@ -7,7 +7,7 @@ import type { PgExecutor } from '../../../common/database/pg-executor.type';
 import type { ClassPageQuery, CopyDraft, CreateClassInput, UpdateClassInput } from '../application/class.contracts';
 import type { StudentClass } from '../domain/student-class.entity';
 import type { StudentSummary } from '../domain/student-summary.entity';
-import { ClassCodeConflictError, ClassDeleteBlockedError } from '../domain/class-persistence.port';
+import { ClassCodeConflictError, ClassDeleteBlockedError } from '../application/ports/class-persistence.port';
 import { ForeignKeyViolationError, UniqueConstraintViolationError } from '../../../common/database/errors/database-infrastructure.error';
 
 const columns = ['id', 'code', 'name', 'description', 'created_at', 'updated_at'] as const;
@@ -83,7 +83,7 @@ export class ClassRepository extends BasePgRepository<StudentClass> {
   async findForCopy(id: number, executor: PgExecutor = this.pool): Promise<StudentClass | null> { return ((await executor.query('SELECT * FROM "tra_class" WHERE "id" = $1', [id])).rows[0] as StudentClass | undefined) ?? null; }
   async codeExists(code: string, executor: PgExecutor = this.pool): Promise<boolean> { return (await executor.query('SELECT 1 FROM "tra_class" WHERE "code" = $1', [code])).rows.length > 0; }
   async codesInUse(codes: string[], executor: PgExecutor = this.pool): Promise<string[]> { if (!codes.length) return []; return (await executor.query('SELECT "code" FROM "tra_class" WHERE "code" = ANY($1::text[])', [codes])).rows.map((row) => String(row.code)); }
-  async insertCopy(values: { code: string; name: string; description?: unknown }, executor: PgExecutor = this.pool): Promise<StudentClass> { return (await executor.query('INSERT INTO "tra_class" ("code", "name", "description", "created_at", "updated_at") VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *', [values.code, values.name, values.description || null])).rows[0] as StudentClass; }
+  async insertCopy(values: { code: string; name: string; description?: unknown }, executor: PgExecutor = this.pool): Promise<StudentClass> { return this.translate(async () => (await executor.query('INSERT INTO "tra_class" ("code", "name", "description", "created_at", "updated_at") VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *', [values.code, values.name, values.description || null])).rows[0] as StudentClass); }
   async findCopySources(ids: number[], executor: PgExecutor = this.pool): Promise<StudentClass[]> { if (!ids.length) return []; return (await executor.query('SELECT "id", "code", "name", "description" FROM "tra_class" WHERE "id" = ANY($1::int[])', [ids])).rows as StudentClass[]; }
   async lockCopySources(ids: number[], executor: PgExecutor): Promise<number[]> { if (!ids.length) return []; return (await executor.query('SELECT "id" FROM "tra_class" WHERE "id" = ANY($1::int[]) FOR SHARE', [ids])).rows.map((row) => Number(row.id)); }
   async insertCopyDrafts(drafts: CopyDraft[], executor: PgExecutor): Promise<StudentClass[]> { const rows: StudentClass[] = []; for (const draft of drafts) rows.push(await this.insertCopy(draft.values, executor)); return rows; }

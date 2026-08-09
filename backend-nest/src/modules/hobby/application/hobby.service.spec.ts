@@ -41,4 +41,34 @@ describe('HobbyService', () => {
     await expect(inUse.service.delete(1)).rejects.toMatchObject({ code: 'G605' });
     expect(inUse.repository.deleteById).not.toHaveBeenCalled();
   });
+
+  it('rejects hobby names longer than 30 characters before opening a transaction', async () => {
+    const { service, transactions } = subject();
+    await expect(service.create({ name: 'x'.repeat(31) })).rejects.toMatchObject({ status: 400, code: 'E603' });
+    expect(transactions.run).not.toHaveBeenCalled();
+  });
+
+  it('passes through unknown create errors', async () => {
+    const { service, repository } = subject();
+    const expected = new Error('database unavailable');
+    repository.getUsedBitValues.mockRejectedValue(expected);
+    await expect(service.create({ name: 'Reading' })).rejects.toBe(expected);
+  });
+
+  it('deletes an unused hobby transactionally', async () => {
+    const { service, repository, transaction, transactions } = subject();
+    repository.findById.mockResolvedValue(hobby);
+    repository.isUsedByActiveStudent.mockResolvedValue(false);
+    repository.deleteById.mockResolvedValue(hobby);
+    await expect(service.delete(1)).resolves.toEqual({ id: '1' });
+    expect(transactions.run).toHaveBeenCalledTimes(1);
+    expect(repository.deleteById).toHaveBeenCalledWith(1, transaction);
+  });
+
+  it('returns the legacy G604 response for a missing hobby', async () => {
+    const { service, repository } = subject();
+    repository.findById.mockResolvedValue(null);
+    await expect(service.delete(404)).rejects.toMatchObject({ status: 404, code: 'G604' });
+    expect(repository.deleteById).not.toHaveBeenCalled();
+  });
 });

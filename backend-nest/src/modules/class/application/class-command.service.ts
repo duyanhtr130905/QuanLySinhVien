@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { CLASS_REPOSITORY, ClassCodeConflictError, ClassDeleteBlockedError, type ClassRepositoryPort } from '../domain/class-persistence.port';
+import { CLASS_REPOSITORY, ClassCodeConflictError, ClassDeleteBlockedError, type ClassRepositoryPort } from './ports/class-persistence.port';
 import type { StudentClass } from '../domain/student-class.entity';
 import type { CreateClassInput, UpdateClassInput } from './class.contracts';
 import { classApplicationException as classException } from './class-application.errors';

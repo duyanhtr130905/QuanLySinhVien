@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { StudentClass } from '../domain/student-class.entity';
-import { CLASS_REPOSITORY, type ClassRepositoryPort } from '../domain/class-persistence.port';
+import { CLASS_REPOSITORY, type ClassRepositoryPort } from './ports/class-persistence.port';
 import type { ClassPageQuery } from './class.contracts';
 import { classApplicationException as classException } from './class-application.errors';
 

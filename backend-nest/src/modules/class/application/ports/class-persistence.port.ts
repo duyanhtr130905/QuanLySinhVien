@@ -1,6 +1,6 @@
-import type { CopyDraft, ClassPageQuery, CreateClassInput, UpdateClassInput } from '../application/class.contracts';
-import type { StudentClass } from './student-class.entity';
-import type { StudentSummary } from './student-summary.entity';
+import type { CopyDraft, ClassPageQuery, CreateClassInput, UpdateClassInput } from '../class.contracts';
+import type { StudentClass } from '../../domain/student-class.entity';
+import type { StudentSummary } from '../../domain/student-summary.entity';
 
 export interface ClassPersistenceTransaction { readonly __classPersistenceTransaction?: never; }
 export interface ClassTransactionPort { run<T>(work: (transaction: ClassPersistenceTransaction) => Promise<T>): Promise<T>; }
