@@ -11,4 +11,9 @@ describe('Student core application architecture',()=>{
       for(const pattern of forbidden)expect(source).not.toMatch(pattern);
     }
   });
+
+  it('keeps the import/export adapter free of use-case and application concerns',()=>{
+    const source=readFileSync(join(__dirname,'../infrastructure/student-postgres-import-export.adapter.ts'),'utf8');
+    for(const pattern of [/FileCodecRegistry/, /PasswordHasher/, /LegacyApiException/, /\bcommitSafe\b/, /\bvalidate\(/, /\btemplate\(/, /\bpreview\(/, /toLocaleLowerCase/, /bcrypt/]) expect(source).not.toMatch(pattern);
+  });
 });

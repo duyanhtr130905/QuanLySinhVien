@@ -36,6 +36,13 @@ export interface StudentImportPreview { rows: StudentPersistenceRecord[]; lookup
 export interface StudentImportCommit { created: StudentPersistenceRecord[]; updated: StudentPersistenceRecord[]; }
 export interface StudentImportLookup { id: number; code?: string; name?: string; bit_value?: number; }
 export interface StudentImportStudentRecord { id: number; code: string; fullname: string | null; dob: string | Date | null; sex: boolean | null; class_id: number | null; email: string | null; username: string | null; homecity: string | null; address: string | null; hobbies: number | null; description: string | null; hair_color: string | null; facebook: string | null; }
+export interface StudentImportWriteValues { code: string; fullname: string; dob: string | null; sex: boolean | null; class_id: number | null; email: string; username: string; homecity: string | null; address: string | null; hobbies: number; description: string | null; hair_color: string | null; facebook: string | null; }
+export interface StudentImportCreate extends StudentImportWriteValues { password: string; }
+export interface StudentImportUpdate extends StudentImportWriteValues { password?: string; }
+
+export class StudentImportUniqueConflictError extends Error {
+  constructor(options?: ErrorOptions) { super('Student import unique value conflict', options); this.name = new.target.name; }
+}
 
 /** Persistence facts and mutations used by the Student copy workflow. */
 export interface StudentCopySource extends StudentCopyValues { id: number; password: string; }
@@ -61,13 +68,13 @@ export interface StudentCopyPersistencePort {
 
 /** Focused persistence reads used by Student import/export preview and export flows. */
 export interface StudentImportExportPort {
-  findActiveById(id: number): Promise<StudentImportStudentRecord | null>;
-  findActiveByIds(ids: unknown[]): Promise<StudentImportStudentRecord[]>;
-  findImportLookups(): Promise<{ classes: StudentImportLookup[]; hobbies: StudentImportLookup[] }>;
-  findActiveByUniqueValues(values: { code: string[]; email: string[]; username: string[] }): Promise<StudentImportStudentRecord[]>;
-  /** Existing write flow; intentionally not part of this read-side refactor. */
-  commit(drafts: unknown): Promise<StudentImportCommit>;
-  commitSafe(drafts: unknown): Promise<StudentImportCommit>;
+  findActiveById(id: number, transaction?: StudentPersistenceTransaction): Promise<StudentImportStudentRecord | null>;
+  findActiveByIds(ids: unknown[], transaction?: StudentPersistenceTransaction): Promise<StudentImportStudentRecord[]>;
+  findImportLookups(transaction?: StudentPersistenceTransaction): Promise<{ classes: StudentImportLookup[]; hobbies: StudentImportLookup[] }>;
+  findActiveByUniqueValues(values: { code: string[]; email: string[]; username: string[] }, transaction?: StudentPersistenceTransaction): Promise<StudentImportStudentRecord[]>;
+  lockActiveByCodes(codes: string[], transaction: StudentPersistenceTransaction): Promise<Array<Pick<StudentImportStudentRecord, 'id' | 'code'>>>;
+  insertImport(values: StudentImportCreate, transaction: StudentPersistenceTransaction): Promise<StudentPersistenceRecord>;
+  updateImport(id: number, values: StudentImportUpdate, transaction: StudentPersistenceTransaction): Promise<StudentPersistenceRecord>;
 }
 
 export const STUDENT_REPOSITORY = Symbol('STUDENT_REPOSITORY');

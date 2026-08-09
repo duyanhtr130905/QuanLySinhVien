@@ -1,46 +1,21 @@
 import { StudentImportExportService } from './student-import-export.service';
-import type { StudentImportExportPort } from '../domain/student-persistence.port';
+import { StudentImportUniqueConflictError, type StudentImportExportPort, type StudentPersistenceTransaction, type StudentTransactionPort } from '../domain/student-persistence.port';
 
 const values = { code: 'SV1', fullname: 'One', dob: '01/01/2000', gender: 'Nam', class: 'C1', email: 'one@example.test', username: 'one', password: 'Valid1!x', hobbies: 'Music' };
-
-const codecs = () => {
-  const entries = new Map(['csv', 'xlsx', 'json', 'xml'].map((format) => [format, { encode: jest.fn(async (rows: Record<string, unknown>[]) => Buffer.from(JSON.stringify(rows))), parse: jest.fn(async () => [values]) }]));
-  return { get: jest.fn((format: string) => entries.get(format)), entries };
-};
-
-const persistence = (): jest.Mocked<StudentImportExportPort> => ({
-  findActiveById: jest.fn(),
-  findActiveByIds: jest.fn(),
-  findImportLookups: jest.fn().mockResolvedValue({ classes: [{ id: 1, code: 'C1' }], hobbies: [{ id: 1, name: 'Music', bit_value: 1 }] }),
-  findActiveByUniqueValues: jest.fn().mockResolvedValue([]),
-  commit: jest.fn(),
-  commitSafe: jest.fn().mockResolvedValue({ created: [], updated: [] }),
-});
+const codecs = () => { const entries = new Map(['csv', 'xlsx', 'json', 'xml'].map((format) => [format, { encode: jest.fn(async (rows: Record<string, unknown>[]) => Buffer.from(JSON.stringify(rows))), parse: jest.fn(async () => [values]) }])); return { get: jest.fn((format: string) => entries.get(format)), entries }; };
+const transaction = {} as StudentPersistenceTransaction;
+const transactions: StudentTransactionPort = { run: jest.fn(async <T>(work: (value: StudentPersistenceTransaction) => Promise<T>) => work(transaction)) };
+const persistence = (): jest.Mocked<StudentImportExportPort> => ({ findActiveById: jest.fn(), findActiveByIds: jest.fn(), findImportLookups: jest.fn().mockResolvedValue({ classes: [{ id: 1, code: 'C1' }], hobbies: [{ id: 2, name: 'Music', bit_value: 4 }] }), findActiveByUniqueValues: jest.fn().mockResolvedValue([]), lockActiveByCodes: jest.fn().mockResolvedValue([]), insertImport: jest.fn().mockResolvedValue({ id: 10, code: 'SV1' }), updateImport: jest.fn().mockResolvedValue({ id: 9, code: 'SV1' }) });
+const makeService = (port = persistence(), files = codecs(), passwords = { hash: jest.fn(async (value: string) => `hash:${value}`) }) => ({ service: new StudentImportExportService(port, transactions, files as never, passwords), port, files, passwords });
 
 describe('StudentImportExportService', () => {
-  it('owns codec orchestration and export mapping while reading persistence facts', async () => {
-    const port = persistence(); const files = codecs();
-    port.findActiveById.mockResolvedValue({ id: 1, ...values, dob: '2000-01-01', sex: true, class_id: 1, hobbies: 1, homecity: null, address: null, description: null, hair_color: null, facebook: null });
-    const service = new StudentImportExportService(port, files as never);
-    const file = await service.exportOne(1, 'json');
-    expect(JSON.parse(file.buffer.toString())[0]).toMatchObject({ code: 'SV1', dob: '01/01/2000', gender: 'Nam', class: 'C1', hobbies: 'Music', password: '' });
-    expect(port.findActiveById).toHaveBeenCalledWith(1);
-    expect(port.findImportLookups).toHaveBeenCalled();
-  });
+  it.each(['csv', 'xlsx', 'json', 'xml'] as const)('keeps %s template schema and preview codec behavior', async (format) => { const { service, files } = makeService(); const file = await service.template(format); expect(Object.keys(JSON.parse(file.buffer.toString())[0])).toEqual(['code', 'fullname', 'dob', 'gender', 'class', 'email', 'username', 'password', 'homecity', 'address', 'hobbies', 'description', 'hair_color', 'facebook']); await expect(service.preview(Buffer.from('fixture'), `students.${format}`)).resolves.toMatchObject({ rows: [expect.objectContaining({ status: 'valid', mode: 'create' })] }); expect(files.entries.get(format)?.parse).toHaveBeenCalledWith(Buffer.from('fixture')); });
 
-  it('parses, normalizes, validates, and determines create/update modes without writes', async () => {
-    const port = persistence(); const files = codecs();
-    port.findActiveByUniqueValues.mockResolvedValue([{ id: 9, code: 'SV1', fullname: 'Old', dob: null, sex: null, class_id: null, email: 'old@example.test', username: 'old', homecity: null, address: null, hobbies: 0, description: null, hair_color: null, facebook: null }]);
-    const service = new StudentImportExportService(port, files as never);
-    const result = await service.preview(Buffer.from('fixture'), 'students.csv');
-    expect(result.rows[0]).toMatchObject({ status: 'valid', mode: 'update', values: { email: 'one@example.test', hobbies: ['Music'] } });
-    expect(files.entries.get('csv')?.parse).toHaveBeenCalledWith(Buffer.from('fixture'));
-    expect(port.commit).not.toHaveBeenCalled();
-  });
+  it('marks duplicate and invalid drafts without mutations', async () => { const { service, port } = makeService(); const result = await service.validate([{ values: { ...values, code: 'DUP', gender: 'bad', dob: '2000/01/01' } }, { values: { ...values, code: 'DUP', password: '' } }]); expect(result.rows[0].fieldErrors).toEqual(expect.objectContaining({ code: expect.any(String), gender: expect.any(String), dob: expect.any(String) })); expect(result.rows[1].fieldErrors).toEqual(expect.objectContaining({ code: expect.any(String), password: expect.any(String) })); expect(port.insertImport).not.toHaveBeenCalled(); });
 
-  it('delegates only the existing commit path', async () => {
-    const port = persistence(); const service = new StudentImportExportService(port, codecs() as never);
-    await expect(service.commitSafe([])).resolves.toEqual({ created: [], updated: [] });
-    expect(port.commitSafe).toHaveBeenCalledWith([]);
-  });
+  it('rejects invalid commits inside the transaction before writes', async () => { const { service, port } = makeService(); await expect(service.commit([{ values: { ...values, password: '' } }])).rejects.toMatchObject({ code: 'J604', getStatus: expect.any(Function) }); expect(port.lockActiveByCodes).not.toHaveBeenCalled(); expect(port.insertImport).not.toHaveBeenCalled(); });
+
+  it('preserves an update password when blank and maps class/hobbies in the transaction', async () => { const { service, port, passwords } = makeService(); port.findActiveByUniqueValues.mockResolvedValue([{ id: 9, code: 'SV1', fullname: 'One', dob: null, sex: null, class_id: null, email: 'one@example.test', username: 'one', homecity: null, address: null, hobbies: 0, description: null, hair_color: null, facebook: null }]); port.lockActiveByCodes.mockResolvedValue([{ id: 9, code: 'SV1' }]); await service.commit([{ draftKey: 'update', rowNumber: 2, values: { ...values, password: '', hobbies: 'Music' } }]); expect(port.updateImport).toHaveBeenCalledWith(9, expect.objectContaining({ class_id: 1, hobbies: 4 }), transaction); expect(port.updateImport.mock.calls[0][1]).not.toHaveProperty('password'); expect(passwords.hash).not.toHaveBeenCalled(); });
+
+  it('maps persistence unique races to the legacy 409 contract', async () => { const { service, port } = makeService(); port.insertImport.mockRejectedValue(new StudentImportUniqueConflictError()); try { await service.commit([{ values }]); } catch (error) { expect(error).toMatchObject({ code: 'J604' }); expect((error as { getStatus(): number }).getStatus()).toBe(409); } });
 });

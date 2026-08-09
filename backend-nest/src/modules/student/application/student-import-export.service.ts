@@ -2,7 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { FileCodecRegistry } from '../../../common/files/file-codec.registry';
 import type { FileFormat } from '../../../common/files/file-format.type';
 import { LegacyApiException } from '../../../common/http/legacy-api.exception';
-import { STUDENT_IMPORT_EXPORT_PORT, type StudentImportExportPort, type StudentImportFile, type StudentImportLookup, type StudentImportPreview, type StudentImportStudentRecord } from '../domain/student-persistence.port';
+import { PASSWORD_HASHER } from '../../../common/security/security.tokens';
+import type { PasswordHasher } from '../../../common/security/password-hasher.interface';
+import { STUDENT_IMPORT_EXPORT_PORT, STUDENT_TRANSACTION, StudentImportUniqueConflictError, type StudentImportCreate, type StudentImportExportPort, type StudentImportFile, type StudentImportLookup, type StudentImportPreview, type StudentImportStudentRecord, type StudentImportUpdate, type StudentPersistenceTransaction, type StudentTransactionPort } from '../domain/student-persistence.port';
 
 const columns = ['code', 'fullname', 'dob', 'gender', 'class', 'email', 'username', 'password', 'homecity', 'address', 'hobbies', 'description', 'hair_color', 'facebook'] as const;
 const formats = ['csv', 'xlsx', 'json', 'xml'] as const;
@@ -15,7 +17,7 @@ type Draft = { draftKey: string; rowNumber: number; values: Values };
 
 @Injectable()
 export class StudentImportExportService {
-  constructor(@Inject(STUDENT_IMPORT_EXPORT_PORT) private readonly imports: StudentImportExportPort, private readonly codecs: FileCodecRegistry) {}
+  constructor(@Inject(STUDENT_IMPORT_EXPORT_PORT) private readonly imports: StudentImportExportPort, @Inject(STUDENT_TRANSACTION) private readonly transactions: StudentTransactionPort, private readonly codecs: FileCodecRegistry, @Inject(PASSWORD_HASHER) private readonly passwords: PasswordHasher) {}
 
   async template(type: unknown): Promise<StudentImportFile> { return this.file([this.templateRow()], this.format(type), 'student-import-template'); }
 
@@ -39,13 +41,13 @@ export class StudentImportExportService {
     return this.validate(rows.map((values, index) => ({ draftKey: `import-${index + 1}`, rowNumber: index + 2, values })));
   }
 
-  async validate(raw: unknown): Promise<StudentImportPreview> {
+  async validate(raw: unknown, transaction?: StudentPersistenceTransaction): Promise<StudentImportPreview> {
     const input = Array.isArray(raw) ? raw : [];
     const normalized = input.map((item) => this.values((item as { values?: Record<string, unknown> })?.values));
     const valuesFor = (field: keyof Values) => [...new Set(normalized.map((value) => value[field]).filter((value): value is string => typeof value === 'string' && Boolean(value)))];
     const [lookups, existing] = await Promise.all([
-      this.imports.findImportLookups(),
-      this.imports.findActiveByUniqueValues({ code: valuesFor('code'), email: valuesFor('email'), username: valuesFor('username') }),
+      this.imports.findImportLookups(transaction),
+      this.imports.findActiveByUniqueValues({ code: valuesFor('code'), email: valuesFor('email'), username: valuesFor('username') }, transaction),
     ]);
     const classByCode = new Map(lookups.classes.map((item) => [this.key(item.code), item]));
     const hobbyByName = new Map(lookups.hobbies.map((item) => [this.key(item.name), item]));
@@ -56,9 +58,35 @@ export class StudentImportExportService {
     return { rows, lookups };
   }
 
-  /** Existing transaction/write behavior remains in the Postgres adapter for now. */
-  commit(drafts: unknown) { return this.imports.commit(drafts); }
-  commitSafe(drafts: unknown) { return this.imports.commitSafe(drafts); }
+  async commit(raw: unknown) {
+    try {
+      return await this.transactions.run(async (transaction) => {
+        const preview = await this.validate(raw, transaction);
+        const invalid = preview.rows.filter((row) => row.status !== 'valid');
+        if (invalid.length) throw this.error(400, 'J604', 'Import drafts are invalid', invalid);
+        const lookups = preview.lookups!;
+        const classes = new Map(lookups.classes.map((row) => [this.key(row.code), row]));
+        const hobbies = new Map(lookups.hobbies.map((row) => [this.key(row.name), row]));
+        const locked = new Map((await this.imports.lockActiveByCodes(preview.rows.map((row) => String((row.values as Values).code)), transaction)).map((row) => [row.code, row]));
+        const created: unknown[] = []; const updated: unknown[] = [];
+        for (const row of preview.rows as Array<ReturnType<StudentImportExportService['validationRow']>>) {
+          const values = row.values;
+          const write = this.writeValues(values, classes, hobbies);
+          const current = locked.get(values.code);
+          if (current) {
+            const update: StudentImportUpdate = values.password ? { ...write, password: await this.passwords.hash(values.password) } : write;
+            updated.push({ draftKey: row.draftKey, rowNumber: row.rowNumber, record: await this.imports.updateImport(current.id, update, transaction) });
+          } else {
+            const create: StudentImportCreate = { ...write, password: await this.passwords.hash(values.password) };
+            created.push({ draftKey: row.draftKey, rowNumber: row.rowNumber, record: await this.imports.insertImport(create, transaction) });
+          }
+        }
+        return { created, updated };
+      });
+    } catch (error) { if (error instanceof StudentImportUniqueConflictError) throw this.error(409, 'J604', 'Duplicate student data'); throw error; }
+  }
+
+  commitSafe(raw: unknown) { return this.commit(raw); }
 
   private validationRow(rawItem: unknown, index: number, values: Values, existing: StudentImportStudentRecord[], existingByCode: Map<string, StudentImportStudentRecord>, counts: { code: Map<string, number>; email: Map<string, number>; username: Map<string, number> }, classByCode: Map<string, StudentImportLookup>, hobbyByName: Map<string, StudentImportLookup>) {
     const item = rawItem as Partial<Draft>; const errors: Record<string, string> = {}; const current = existingByCode.get(values.code);
@@ -80,6 +108,10 @@ export class StudentImportExportService {
     const missingHobbies = values.hobbies.filter((name) => !hobbyByName.has(this.key(name)));
     if (missingHobbies.length) errors.hobbies = `Hobby chưa tồn tại: ${missingHobbies.join('; ')}`;
     return { draftKey: typeof item.draftKey === 'string' ? item.draftKey : `import-${index + 1}`, rowNumber: Number(item.rowNumber) || index + 2, values, mode: current ? 'update' : 'create', errors, fieldErrors: errors, missingHobbies, status: Object.keys(errors).length ? 'invalid' : 'valid' };
+  }
+
+  private writeValues(values: Values, classes: Map<string, StudentImportLookup>, hobbies: Map<string, StudentImportLookup>): Omit<StudentImportCreate, 'password'> {
+    return { code: values.code, fullname: values.fullname, dob: values.dob ?? null, sex: values.gender ?? null, class_id: values.class ? classes.get(this.key(values.class))!.id : null, email: values.email, username: values.username, homecity: values.homecity || null, address: values.address || null, hobbies: values.hobbies.reduce((mask, name) => mask | Number(hobbies.get(this.key(name))!.bit_value), 0), description: values.description || null, hair_color: values.hair_color || null, facebook: values.facebook || null };
   }
 
   private async exportRows(records: StudentImportStudentRecord[], format: FileFormat, name: string): Promise<StudentImportFile> {
