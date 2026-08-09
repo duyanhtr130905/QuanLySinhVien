@@ -35,13 +35,15 @@ export interface StudentImportFile { buffer: Buffer; contentType: string; filena
 export interface StudentImportPreview { rows: StudentPersistenceRecord[]; }
 export interface StudentImportCommit { created: StudentPersistenceRecord[]; updated: StudentPersistenceRecord[]; }
 
-/** Dedicated persistence boundary for the Student copy use case. */
-export interface StudentCopyPort {
-  copyOne(id: number): Promise<StudentPersistenceRecord>;
-  copyMany(ids: unknown[]): Promise<{ created: StudentPersistenceRecord[]; notFound: unknown[] }>;
-  preview(ids: unknown[]): Promise<StudentCopyPreview>;
-  validate(drafts: unknown): Promise<{ rows: StudentPersistenceRecord[] }>;
-  commit(drafts: unknown, files?: StudentAttachmentUpload[]): Promise<StudentCopyCommit>;
+/** Persistence facts and mutations used by the Student copy workflow. */
+export interface StudentCopySource extends StudentCopyValues { id: number; password: string; }
+export interface StudentCopyInsert extends StudentCopyValues { password: string; }
+export interface StudentCopyPersistencePort {
+  findActiveSources(ids: number[], transaction?: StudentPersistenceTransaction): Promise<StudentCopySource[]>;
+  findOccupiedUniqueValues(values: { code: string[]; username: string[]; email: string[] }, transaction?: StudentPersistenceTransaction): Promise<{ code: string[]; username: string[]; email: string[] }>;
+  findExistingClassIds(ids: number[], transaction?: StudentPersistenceTransaction): Promise<number[]>;
+  lockActiveSources(ids: number[], transaction: StudentPersistenceTransaction): Promise<StudentCopySource[]>;
+  insertCopies(rows: StudentCopyInsert[], transaction: StudentPersistenceTransaction): Promise<StudentPersistenceRecord[]>;
 }
 
 /** Dedicated persistence boundary for Student import/export workflows. */
@@ -57,5 +59,5 @@ export interface StudentImportExportPort {
 
 export const STUDENT_REPOSITORY = Symbol('STUDENT_REPOSITORY');
 export const STUDENT_TRANSACTION = Symbol('STUDENT_TRANSACTION');
-export const STUDENT_COPY_PORT = Symbol('STUDENT_COPY_PORT');
+export const STUDENT_COPY_PERSISTENCE = Symbol('STUDENT_COPY_PERSISTENCE');
 export const STUDENT_IMPORT_EXPORT_PORT = Symbol('STUDENT_IMPORT_EXPORT_PORT');
