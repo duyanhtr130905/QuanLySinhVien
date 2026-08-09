@@ -1,15 +1,87 @@
-# Quan Ly Sinh Vien
+# Quản lý Sinh viên
 
-## Local Development
+Hệ thống quản lý **Sinh viên – Lớp – Sở thích** với frontend React và backend NestJS.  
+Backend cũ ExpressJS vẫn được giữ lại để đối chiếu contract/regression trong quá trình migration.
 
-The backend API and React frontend use different local ports:
+## Kiến trúc
 
-- Backend API: `http://localhost:3000`
-- React frontend: `http://localhost:3001`
+Backend NestJS được tổ chức theo hướng module hóa và Dependency Inversion:
 
-Do not open `http://localhost:3000` to access the user interface. That port belongs to the backend API; open `http://localhost:3001` for the React application.
+```text
+HTTP / Controller
+      ↓
+Application / Use Cases
+      ↓
+Ports / Abstractions
+      ↑
+Infrastructure / PostgreSQL / Storage
+```
 
-### Backend
+Các module chính:
+
+- **Student**: CRUD, phân trang/tìm kiếm, soft delete/restore, copy, import/export, attachment.
+- **Class**: CRUD, student count, membership, copy, import/export, xóa có kiểm tra sinh viên.
+- **Hobby**: tạo hobby bằng bitmask, cấp `bit_value` an toàn, kiểm tra hobby đang được sử dụng.
+
+Application layer không phụ thuộc trực tiếp vào SQL/PostgreSQL implementation; persistence được truy cập qua ports và NestJS Dependency Injection.
+
+## Công nghệ
+
+- **Frontend:** React 17, Redux, Redux-Saga, Ant Design
+- **Backend chính:** NestJS 11, TypeScript
+- **Backend legacy:** Node.js / ExpressJS
+- **Database:** PostgreSQL
+- **File storage:** Supabase Storage
+- **Testing:** Jest, Supertest, dual-target API contract tests, Postman automated tests
+
+## Chạy local
+
+### 1. NestJS Backend — `http://localhost:3002`
+
+```powershell
+cd backend-nest
+npm install
+Copy-Item .env.example .env
+npm run start:dev
+```
+
+Cấu hình `.env`:
+
+```env
+PORT=3002
+DATABASE_URL=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+CORS_ALLOWED_ORIGINS=http://localhost:3001
+```
+
+> Không commit `.env` hoặc bất kỳ secret/key nào.
+
+### 2. React Frontend — `http://localhost:3001`
+
+```powershell
+cd frontend/reactjs-template
+npm ci --legacy-peer-deps
+```
+
+Tạo `.env.local`:
+
+```env
+PORT=3001
+REACT_APP_API_BASE_URL=http://localhost:3002
+```
+
+Sau đó:
+
+```powershell
+npm start
+```
+
+Mở: **http://localhost:3001**
+
+### 3. Legacy Express Backend — tùy chọn
+
+Legacy backend chỉ cần khi chạy regression/contract comparison:
 
 ```powershell
 cd backend
@@ -17,19 +89,46 @@ npm install
 npm run dev
 ```
 
-The backend listens on `http://localhost:3000`.
+Mặc định chạy tại **http://localhost:3000**.
 
-### Frontend
+## Kiểm thử
+
+Trong `backend-nest`:
 
 ```powershell
-cd frontend/reactjs-template
-Copy-Item .env.example .env
-npm ci --legacy-peer-deps
-npm start
+npm test
+npm run test:e2e
+npm run build
+npm run test:contract
 ```
 
-Open `http://localhost:3001` after the development server finishes compiling.
+Contract harness hỗ trợ kiểm tra:
 
-The `.env` file is local-only configuration and must not be committed. Copy `.env.example` only on a machine that does not already have a `.env` file, so existing local configuration is preserved.
+```text
+legacy
+nest
+both
+```
 
-The frontend currently requires `npm ci --legacy-peer-deps` because the project uses a React 17-era dependency tree and template.
+Ngoài ra project có Postman automated suites cho smoke test, validation, Cartesian/Pairwise combinations và regression các lỗi API đã phát hiện.
+
+## Cấu trúc chính
+
+```text
+QuanLySinhVien/
+├─ backend/                    # ExpressJS legacy
+├─ backend-nest/               # NestJS backend chính
+│  └─ src/modules/
+│     ├─ student/
+│     ├─ class/
+│     └─ hobby/
+└─ frontend/reactjs-template/  # React frontend
+```
+
+## Ghi chú
+
+- Frontend local sử dụng NestJS tại port `3002`.
+- `code` của Class là immutable sau khi tạo.
+- Không được xóa Class đang có sinh viên.
+- Student import/export hỗ trợ CSV, XLSX, JSON và XML.
+- Hobby dùng bitmask; `bit_value` được backend tự cấp và giới hạn đến `2^30`.
