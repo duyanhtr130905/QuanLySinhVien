@@ -1,5 +1,5 @@
 import { studentException } from '../errors/student.errors';
-import type { StudentWriteInput } from './student.contracts';
+import type { StudentWriteInput } from '../domain/student.contracts';
 
 const email = /^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/;
 const facebook = /^https?:\/\/[0-9a-zA-Z.\-_]+$/;

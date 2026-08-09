@@ -6,7 +6,7 @@ import { PASSWORD_HASHER } from '../../../common/security/security.tokens';
 import type { PasswordHasher } from '../../../common/security/password-hasher.interface';
 import { studentException, studentUniqueMessage } from '../errors/student.errors';
 import type { Student } from '../domain/student.entity';
-import type { StudentWriteInput } from './student.contracts';
+import type { StudentWriteInput } from '../domain/student.contracts';
 import { STUDENT_REPOSITORY, STUDENT_TRANSACTION, type StudentRepositoryPort, type StudentTransactionPort } from '../domain/student-persistence.port';
 
 const allowedImages=new Set(['image/jpeg','image/jpg','image/png']);

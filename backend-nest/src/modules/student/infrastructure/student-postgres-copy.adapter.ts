@@ -5,7 +5,7 @@ import { PgTransactionManager } from '../../../common/database/pg-transaction-ma
 import { OBJECT_STORAGE } from '../../../common/storage/storage.tokens';
 import type { ObjectStorage } from '../../../common/storage/object-storage.interface';
 import { studentCopyException, studentException, studentUniqueMessage } from '../errors/student.errors';
-import type { StudentCopyPort, StudentPersistenceRecord } from '../domain/student-persistence.port';
+import type { StudentCopyDraft, StudentCopyPort, StudentPersistenceRecord } from '../domain/student-persistence.port';
 
 type CopyField = 'code' | 'fullname' | 'dob' | 'sex' | 'homecity' | 'address' | 'hair_color' | 'email' | 'facebook' | 'class_id' | 'username' | 'description' | 'hobbies' | 'attachment';
 type CopyValues = Record<CopyField, unknown> & { code: string; fullname: string; email: string; username: string; class_id: number | null; hobbies: number; attachment: string | null };
@@ -86,7 +86,7 @@ export class StudentPostgresCopyAdapter implements StudentCopyPort {
       values.email = this.nextCandidate('email', values.email, 256, occupied.email, reserved.email);
       drafts.push({ draftKey: `student-${id}`, sourceId: Number(id), values });
     }
-    return { drafts, notFoundIds };
+    return { drafts: drafts as StudentCopyDraft[], notFoundIds };
   }
 
   // Read-only: two batch lookups at most (unique values and referenced classes).

@@ -1,5 +1,5 @@
 import type { Student } from './student.entity';
-import type { StudentPageQuery, StudentWriteInput } from '../application/student.contracts';
+import type { StudentPageQuery, StudentWriteInput } from './student.contracts';
 
 /** Opaque transaction context owned by persistence adapters. */
 export interface StudentPersistenceTransaction {
@@ -25,8 +25,10 @@ export interface StudentRepositoryPort {
   countAttachmentReferences(attachment: string, transaction?: StudentPersistenceTransaction): Promise<number>;
 }
 
+export interface StudentAttachmentUpload { fieldname: string; mimetype: string; size: number; buffer: Buffer; originalname: string; }
 export type StudentPersistenceRecord = Record<string, unknown>;
-export interface StudentCopyDraft { draftKey: string; sourceId: number; values: Record<string, unknown>; }
+export interface StudentCopyValues { code: string; fullname: string; dob: string | null; sex: boolean | null; homecity: string | null; address: string | null; hair_color: string | null; email: string; facebook: string | null; class_id: number | null; username: string; description: string | null; hobbies: number; attachment: string | null; }
+export interface StudentCopyDraft { draftKey: string; sourceId: number; values: StudentCopyValues; }
 export interface StudentCopyPreview { drafts: StudentCopyDraft[]; notFoundIds: unknown[]; }
 export interface StudentCopyCommit { created: Array<{ draftKey: string; record: StudentPersistenceRecord | undefined }>; }
 export interface StudentImportFile { buffer: Buffer; contentType: string; filename: string; }
@@ -39,7 +41,7 @@ export interface StudentCopyPort {
   copyMany(ids: unknown[]): Promise<{ created: StudentPersistenceRecord[]; notFound: unknown[] }>;
   preview(ids: unknown[]): Promise<StudentCopyPreview>;
   validate(drafts: unknown): Promise<{ rows: StudentPersistenceRecord[] }>;
-  commit(drafts: unknown, files?: Express.Multer.File[]): Promise<StudentCopyCommit>;
+  commit(drafts: unknown, files?: StudentAttachmentUpload[]): Promise<StudentCopyCommit>;
 }
 
 /** Dedicated persistence boundary for Student import/export workflows. */
