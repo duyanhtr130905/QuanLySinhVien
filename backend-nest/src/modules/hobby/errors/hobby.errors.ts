@@ -1,4 +1,5 @@
 import { LegacyApiException } from '../../../common/http/legacy-api.exception';
+export { HobbyBitExhaustedError } from '../application/hobby-application.errors';
 
 export const hobbyMessages = {
   list: 'Lấy danh sách sở thích thành công',
@@ -15,13 +16,6 @@ export const hobbyMessages = {
   notFound: 'Không tìm thấy hobby',
   inUse: 'Không thể xóa: sở thích này đang được sinh viên sử dụng',
 } as const;
-
-export class HobbyBitExhaustedError extends Error {
-  constructor() {
-    super(hobbyMessages.bitExhausted);
-    this.name = HobbyBitExhaustedError.name;
-  }
-}
 
 export const hobbyException = {
   invalidName: () => new LegacyApiException({ status: 400, code: 'E603', message: hobbyMessages.invalidName }),

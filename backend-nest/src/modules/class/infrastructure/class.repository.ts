@@ -4,11 +4,11 @@ import { BasePgRepository, type PgRepositoryMetadata } from '../../../common/dat
 import { PG_POOL } from '../../../common/database/database.tokens';
 import { PgErrorTranslator } from '../../../common/database/pg-error-translator';
 import type { PgExecutor } from '../../../common/database/pg-executor.type';
-import type { ClassPageQuery, CreateClassInput, UpdateClassInput } from '../http/class-request.parser';
+import type { ClassPageQuery, CopyDraft, CreateClassInput, UpdateClassInput } from '../application/class.contracts';
 import type { StudentClass } from '../domain/student-class.entity';
 import type { StudentSummary } from '../domain/student-summary.entity';
-import { ForeignKeyViolationError } from '../../../common/database/errors/database-infrastructure.error';
-import type { CopyDraft } from '../http/class-request.parser';
+import { ClassCodeConflictError, ClassDeleteBlockedError } from '../domain/class-persistence.port';
+import { ForeignKeyViolationError, UniqueConstraintViolationError } from '../../../common/database/errors/database-infrastructure.error';
 
 const columns = ['id', 'code', 'name', 'description', 'created_at', 'updated_at'] as const;
 const metadata: PgRepositoryMetadata = { tableName: 'tra_class', primaryKey: 'id', selectableColumns: columns, insertableColumns: ['code', 'name', 'description'], updatableColumns: ['name', 'description'], searchableColumns: ['code', 'name', 'description'], sortableColumns: columns, defaultOrder: { column: 'id', direction: 'ASC' } };
@@ -66,7 +66,7 @@ export class ClassRepository extends BasePgRepository<StudentClass> {
     const deletedIds: unknown[] = []; const blockedIds: unknown[] = [];
     for (const id of ids) {
       try { const deleted = await this.deleteById(id, executor); if (deleted) deletedIds.push(deleted.id); }
-      catch (error) { if (error instanceof ForeignKeyViolationError) blockedIds.push(id); else throw error; }
+      catch (error) { if (error instanceof ClassDeleteBlockedError) blockedIds.push(id); else throw error; }
     }
     return { deletedIds, blockedIds };
   }
@@ -96,5 +96,13 @@ export class ClassRepository extends BasePgRepository<StudentClass> {
 
   private selectColumns(columnlist?: string): string { if (!columnlist) return columns.map((column) => `"${column}"`).join(', '); const selected = columnlist.split(',').map((column) => column.trim()).filter((column): column is typeof columns[number] => (columns as readonly string[]).includes(column)); return (selected.length ? selected : columns).map((column) => `"${column}"`).join(', '); }
   private orderBy(order?: string): string { if (!order) return '"id" ASC'; const parts = order.split('-').map((part) => { const [alias, direction] = part.split(':'); const column = aliases[alias]; return column ? `"${column}" ${direction === '1' ? 'DESC' : 'ASC'}` : null; }).filter((part): part is string => part !== null); return parts.length ? parts.join(', ') : '"id" ASC'; }
-  private async translate<T>(operation: () => Promise<T>): Promise<T> { try { return await operation(); } catch (error) { throw this.errors.translate(error); } }
+  private async translate<T>(operation: () => Promise<T>): Promise<T> {
+    try { return await operation(); }
+    catch (error) {
+      const translated = this.errors.translate(error);
+      if (translated instanceof UniqueConstraintViolationError && translated.constraint === 'tra_class_code_key') throw new ClassCodeConflictError({ cause: translated });
+      if (translated instanceof ForeignKeyViolationError) throw new ClassDeleteBlockedError({ cause: translated });
+      throw translated;
+    }
+  }
 }

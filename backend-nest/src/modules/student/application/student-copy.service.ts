@@ -35,7 +35,7 @@ export class StudentCopyService {
     try { return await this.transactions.run(async (transaction) => {
       const numericIds = ids.map(Number);
       const sources = await this.copies.findActiveSources([...new Set(numericIds)], transaction);
-      const sourceById = new Map(sources.map((source) => [source.id, source]));
+      const sourceById = new Map(sources.map((source) => [Number(source.id), source]));
       const found = numericIds.map((id) => sourceById.get(id));
       const notFound = ids.filter((_, index) => !found[index]);
       const foundSources = found.filter((source): source is StudentCopySource => Boolean(source));
@@ -50,7 +50,7 @@ export class StudentCopyService {
     const uniqueIds = [...new Set(ids)];
     const numericIds = uniqueIds.map(Number);
     const sources = await this.copies.findActiveSources(numericIds);
-    const sourceById = new Map(sources.map((source) => [source.id, source]));
+    const sourceById = new Map(sources.map((source) => [Number(source.id), source]));
     const foundSources = numericIds.map((id) => sourceById.get(id)).filter((source): source is StudentCopySource => Boolean(source));
     const values = await this.copyValues(foundSources);
     let valueIndex = 0;
@@ -102,7 +102,7 @@ export class StudentCopyService {
         if (occupied.code.length || occupied.username.length || occupied.email.length) throw studentCopyException.conflict('Code, username hoặc email đã tồn tại');
         const sourceIds = [...new Set(drafts.map((draft) => draft.sourceId))];
         const sources = await this.copies.lockActiveSources(sourceIds, transaction);
-        const sourceById = new Map(sources.map((source) => [source.id, source]));
+        const sourceById = new Map(sources.map((source) => [Number(source.id), source]));
         const missing = sourceIds.find((id) => !sourceById.has(id));
         if (missing !== undefined) throw studentCopyException.notFound(`Không tìm thấy sinh viên gốc ${missing}`);
         const classIds = [...new Set(drafts.map((draft) => draft.values.class_id).filter((id): id is number => id !== null))];

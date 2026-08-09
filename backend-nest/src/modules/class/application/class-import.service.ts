@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { FileCodecRegistry } from '../../../common/files/file-codec.registry';
 import type { FileFormat } from '../../../common/files/file-format.type';
-import { classException } from '../errors/class.errors';
+import { classApplicationException as classException } from './class-application.errors';
 import { ClassCommandService } from './class-command.service';
-import type { CreateClassInput } from '../http/class-request.parser';
+import type { CreateClassInput } from './class.contracts';
 
 @Injectable()
 export class ClassImportService {

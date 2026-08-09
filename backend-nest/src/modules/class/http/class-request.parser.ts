@@ -3,10 +3,7 @@ import { classException } from '../errors/class.errors';
 import type { CreateClassDto } from './dto/create-class.dto';
 import type { ClassPageQueryDto } from './dto/class-page-query.dto';
 import type { UpdateClassDto } from './dto/update-class.dto';
-
-export interface ClassPageQuery { page: number; size: number; order?: string; search?: string; columnlist?: string; toplist: number[]; }
-export interface CreateClassInput { code: string; name: string; description?: unknown; }
-export interface UpdateClassInput { name?: string; description?: unknown; }
+import type { ClassPageQuery, CopyDraft, CreateClassInput, UpdateClassInput } from '../application/class.contracts';
 
 @Injectable()
 export class ClassRequestParser {
@@ -61,5 +58,3 @@ export class ClassRequestParser {
   }
   private strictPositiveInt(value: unknown): number | null { if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null; if (typeof value === 'string' && /^[1-9]\d*$/.test(value)) { const parsed = Number(value); return Number.isSafeInteger(parsed) ? parsed : null; } return null; }
 }
-
-export interface CopyDraft { draftKey: string; sourceId: number; values: CreateClassInput; }

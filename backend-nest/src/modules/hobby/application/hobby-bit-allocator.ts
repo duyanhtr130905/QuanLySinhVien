@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HobbyBitExhaustedError } from '../errors/hobby.errors';
+import { HobbyBitExhaustedError } from './hobby-application.errors';
 
 @Injectable()
 export class HobbyBitAllocator {

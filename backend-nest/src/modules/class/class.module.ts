@@ -13,5 +13,7 @@ import { ClassExportService } from './application/class-export.service';
 import { ClassImportMulterFilter } from './http/class-import-multer.filter';
 import { ClassRequestParser } from './http/class-request.parser';
 import { ClassRepository } from './infrastructure/class.repository';
-@Module({ imports: [DatabaseModule, HttpModule, FilesModule], controllers: [ClassAdvancedController, ClassController], providers: [ClassRepository, ClassRequestParser, ClassQueryService, ClassCommandService, ClassMembershipService, ClassCopyService, ClassImportService, ClassExportService, ClassImportMulterFilter] })
+import { ClassPgTransactionAdapter } from './infrastructure/class-pg-transaction.adapter';
+import { CLASS_COPY_PERSISTENCE, CLASS_EXPORT_PERSISTENCE, CLASS_MEMBERSHIP_PERSISTENCE, CLASS_REPOSITORY, CLASS_TRANSACTION } from './domain/class-persistence.port';
+@Module({ imports: [DatabaseModule, HttpModule, FilesModule], controllers: [ClassAdvancedController, ClassController], providers: [ClassRepository, ClassPgTransactionAdapter, { provide: CLASS_REPOSITORY, useExisting: ClassRepository }, { provide: CLASS_MEMBERSHIP_PERSISTENCE, useExisting: ClassRepository }, { provide: CLASS_COPY_PERSISTENCE, useExisting: ClassRepository }, { provide: CLASS_EXPORT_PERSISTENCE, useExisting: ClassRepository }, { provide: CLASS_TRANSACTION, useExisting: ClassPgTransactionAdapter }, ClassRequestParser, ClassQueryService, ClassCommandService, ClassMembershipService, ClassCopyService, ClassImportService, ClassExportService, ClassImportMulterFilter] })
 export class ClassModule {}

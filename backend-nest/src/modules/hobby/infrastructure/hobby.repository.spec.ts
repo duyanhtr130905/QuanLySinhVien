@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { UniqueConstraintViolationError } from '../../../common/database/errors/database-infrastructure.error';
+import { HobbyDuplicateError } from '../domain/hobby-persistence.port';
 import { PgErrorTranslator } from '../../../common/database/pg-error-translator';
 import type { PgExecutor } from '../../../common/database/pg-executor.type';
 import { HobbyRepository } from './hobby.repository';
@@ -71,10 +71,9 @@ describe('HobbyRepository', () => {
     (executor.query as jest.Mock).mockRejectedValue(rawError);
     const repository = createRepository(executor);
 
-    await expect(repository.getActive()).rejects.toEqual(expect.objectContaining({
-      name: UniqueConstraintViolationError.name,
-      constraint: 'tra_hobby_name_key',
-      cause: rawError,
-    }));
+    await expect(repository.getActive()).rejects.toMatchObject({
+      name: HobbyDuplicateError.name,
+      field: 'name',
+    });
   });
 });

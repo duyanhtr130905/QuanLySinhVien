@@ -1,12 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { PgTransactionManager } from '../../../common/database/pg-transaction-manager';
-import type { ClassPageQuery } from '../http/class-request.parser';
-import { classException } from '../errors/class.errors';
-import { ClassRepository } from '../infrastructure/class.repository';
+import { Inject, Injectable } from '@nestjs/common';
+import { CLASS_MEMBERSHIP_PERSISTENCE, CLASS_TRANSACTION, type ClassMembershipPersistencePort, type ClassTransactionPort } from '../domain/class-persistence.port';
+import type { ClassPageQuery } from './class.contracts';
+import { classApplicationException as classException } from './class-application.errors';
 
 @Injectable()
 export class ClassMembershipService {
-  constructor(private readonly repository: ClassRepository, private readonly transactions: PgTransactionManager) {}
+  constructor(@Inject(CLASS_MEMBERSHIP_PERSISTENCE) private readonly repository: ClassMembershipPersistencePort, @Inject(CLASS_TRANSACTION) private readonly transactions: ClassTransactionPort) {}
   async getStudents(classId: number, query: ClassPageQuery) { if (!await this.repository.existsById(classId)) throw classException.membershipClassNotFound(); return this.repository.findStudentsByClass(classId, query); }
   async getAvailableStudents(classId: number, query: ClassPageQuery) { if (!await this.repository.existsById(classId)) throw classException.membershipClassNotFound(); return this.repository.findAvailableStudents(query); }
   async assign(classId: number, values: unknown[]): Promise<number[]> { const ids = this.ids(values); return this.transactions.run(async (client) => { if (!await this.repository.lockClass(classId, client)) throw classException.membershipClassNotFound(); const students = await this.repository.lockStudents(ids, client); const map = new Map(students.map((student) => [this.id(student.id), student])); const missing = ids.filter((id) => !map.has(id)); if (missing.length) throw classException.membershipStudentNotFound(missing); const deleted = ids.filter((id) => map.get(id)?.deleted_at !== null); if (deleted.length) throw classException.membershipStudentDeleted(deleted); const assigned = ids.filter((id) => map.get(id)?.class_id !== null); if (assigned.length) throw classException.membershipStudentAssigned(assigned); await this.repository.assignStudents(classId, ids, client); return ids; }); }

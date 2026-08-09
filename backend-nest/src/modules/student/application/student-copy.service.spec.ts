@@ -25,6 +25,15 @@ describe('StudentCopyService', () => {
     expect(copies.findOccupiedUniqueValues).toHaveBeenCalledTimes(1);
   });
 
+  it('normalizes PostgreSQL string ids before matching bulk-copy and preview requests', async () => {
+    const postgresSource = { ...source, id: '1' } as unknown as typeof source;
+    const { service, copies } = setup({ findActiveSources: jest.fn().mockResolvedValue([postgresSource]), lockActiveSources: jest.fn().mockResolvedValue([postgresSource]), insertCopies: jest.fn().mockResolvedValue([{ id: 2 }]) });
+    await expect(service.copyMany([1, 999])).resolves.toMatchObject({ created: [{ id: 2 }], notFound: [999] });
+    await expect(service.preview([1])).resolves.toMatchObject({ drafts: [expect.objectContaining({ sourceId: 1 })], notFoundIds: [] });
+    await expect(service.commit([{ ...draft, sourceId: 1 }])).resolves.toMatchObject({ created: [expect.objectContaining({ draftKey: 'student-1' })] });
+    expect(copies.findActiveSources).toHaveBeenCalledWith([1]);
+  });
+
   it('owns validation rules and uses focused batched persistence lookups', async () => {
     const { service, copies } = setup({ findOccupiedUniqueValues: jest.fn().mockResolvedValue({ code: ['taken'], username: [], email: ['taken@example.test'] }), findExistingClassIds: jest.fn().mockResolvedValue([]) });
     const result = await service.validate([{ draftKey: 'a', sourceId: 1, values: { code: 'taken', fullname: 'One', email: 'taken@example.test', username: 'user', class_id: 7 } }]);

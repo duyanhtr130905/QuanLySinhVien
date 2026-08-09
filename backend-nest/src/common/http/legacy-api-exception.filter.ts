@@ -33,6 +33,11 @@ export class LegacyApiExceptionFilter implements ExceptionFilter {
       return;
     }
 
+    if (this.isLegacyApplicationError(exception)) {
+      response.status(exception.status).json(this.responses.error(exception.status, exception.code, exception.message));
+      return;
+    }
+
     // Keep framework HTTP exceptions (for example a missing route) intact.
     if (exception instanceof HttpException) {
       response.status(exception.getStatus()).json(exception.getResponse());
@@ -59,5 +64,12 @@ export class LegacyApiExceptionFilter implements ExceptionFilter {
     const targets = [handler, controller].filter((target): target is Function => typeof target === 'function');
     const fallback = this.reflector.getAllAndOverride(LEGACY_FALLBACK_CODE, targets);
     return typeof fallback === 'string' ? fallback : '600';
+  }
+
+  private isLegacyApplicationError(error: unknown): error is { legacyApplicationError: true; status: number; code: string; message: string } {
+    return typeof error === 'object' && error !== null
+      && (error as { legacyApplicationError?: unknown }).legacyApplicationError === true
+      && typeof (error as { status?: unknown }).status === 'number'
+      && typeof (error as { code?: unknown }).code === 'string';
   }
 }

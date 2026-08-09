@@ -5,6 +5,8 @@ import { PG_POOL } from '../../../common/database/database.tokens';
 import { PgErrorTranslator } from '../../../common/database/pg-error-translator';
 import type { PgExecutor } from '../../../common/database/pg-executor.type';
 import type { Hobby } from '../domain/hobby.entity';
+import { HobbyDuplicateError, type HobbyDuplicateField } from '../domain/hobby-persistence.port';
+import { UniqueConstraintViolationError } from '../../../common/database/errors/database-infrastructure.error';
 
 const hobbyMetadata: PgRepositoryMetadata = {
   tableName: 'tra_hobby',
@@ -78,10 +80,15 @@ export class HobbyRepository extends BasePgRepository<Hobby> {
   }
 
   private async translate<T>(operation: () => Promise<T>): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      throw this.errors.translate(error);
+    try { return await operation(); }
+    catch (error) {
+      const translated = this.errors.translate(error);
+      if (translated instanceof UniqueConstraintViolationError) throw new HobbyDuplicateError(this.duplicateField(translated.constraint), { cause: translated });
+      throw translated;
     }
+  }
+
+  private duplicateField(constraint?: string): HobbyDuplicateField | undefined {
+    return ({ tra_hobby_name_key: 'name', tra_hobby_code_key: 'code', tra_hobby_bit_value_key: 'bitValue' } as const)[constraint ?? ''];
   }
 }
