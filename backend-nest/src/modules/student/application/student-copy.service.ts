@@ -1,12 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OBJECT_STORAGE } from '../../../common/storage/storage.tokens';
 import type { ObjectStorage } from '../../../common/storage/object-storage.interface';
-import { studentCopyException, studentException, studentUniqueMessage } from '../errors/student.errors';
-import { STUDENT_COPY_PERSISTENCE, STUDENT_REPOSITORY, STUDENT_TRANSACTION, type StudentAttachmentUpload, type StudentCopyDraft, type StudentCopyInsert, type StudentCopyPersistencePort, type StudentCopySource, type StudentPersistenceRecord, type StudentRepositoryPort, type StudentTransactionPort } from '../domain/student-persistence.port';
+import { studentCopyException, studentException } from '../errors/student.errors';
+import { STUDENT_COPY_PERSISTENCE, STUDENT_REPOSITORY, STUDENT_TRANSACTION, StudentCopyClassReferenceError, StudentCopyUniqueConflictError, type StudentAttachmentUpload, type StudentCopyDraft, type StudentCopyInsert, type StudentCopyPersistencePort, type StudentCopySource, type StudentPersistenceRecord, type StudentRepositoryPort, type StudentTransactionPort, type StudentCopyUniqueField } from '../domain/student-persistence.port';
 
 type UniqueField = 'code' | 'username' | 'email';
 type Draft = StudentCopyDraft;
-type PgError = { code?: string; constraint?: string };
 
 const imageTypes = new Set(['image/jpeg', 'image/jpg', 'image/png']);
 const emailPattern = /^[0-9a-zA-Z.\-_]+@[0-9a-zA-Z.\-_]+$/;
@@ -24,16 +23,16 @@ export class StudentCopyService {
   ) {}
 
   async copyOne(id: number): Promise<StudentPersistenceRecord> {
-    return this.transactions.run(async (transaction) => {
+    try { return await this.transactions.run(async (transaction) => {
       const source = (await this.copies.findActiveSources([id], transaction))[0];
       if (!source) throw studentCopyException.notFound();
       const values = await this.copyValues([source], transaction);
       return (await this.copies.insertCopies([{ ...values[0], password: source.password }], transaction))[0];
-    });
+    }); } catch (error) { throw this.mapPersistenceError(error); }
   }
 
   async copyMany(ids: unknown[]): Promise<{ created: StudentPersistenceRecord[]; notFound: unknown[] }> {
-    return this.transactions.run(async (transaction) => {
+    try { return await this.transactions.run(async (transaction) => {
       const numericIds = ids.map(Number);
       const sources = await this.copies.findActiveSources([...new Set(numericIds)], transaction);
       const sourceById = new Map(sources.map((source) => [source.id, source]));
@@ -44,7 +43,7 @@ export class StudentCopyService {
       const values = await this.copyValues(foundSources, transaction);
       const created = await this.copies.insertCopies(values.map((value, index) => ({ ...value, password: foundSources[index].password })), transaction);
       return { created, notFound };
-    });
+    }); } catch (error) { throw this.mapPersistenceError(error); }
   }
 
   async preview(ids: unknown[]): Promise<{ drafts: StudentCopyDraft[]; notFoundIds: unknown[] }> {
@@ -115,7 +114,7 @@ export class StudentCopyService {
       });
     } catch (error) {
       await Promise.all([...uploaded.values()].map((url) => this.cleanupAttachment(url)));
-      throw this.mapCommitError(error);
+      throw this.mapPersistenceError(error);
     }
   }
 
@@ -178,6 +177,7 @@ export class StudentCopyService {
   private assertDraftUnique(drafts: Draft[]): void { for (const field of ['code', 'username', 'email'] as const) { const values = drafts.map((draft) => draft.values[field]); if (new Set(values).size !== values.length) throw studentCopyException.conflict(`${field} bị trùng trong các bản sao`); } }
   private async uploadAttachment(file: StudentAttachmentUpload, code: string): Promise<string> { if (!imageTypes.has(file.mimetype) || file.size > 5 * 1024 * 1024) throw studentException.createValidation('Ảnh phải là jpg/jpeg/png, tối đa 5MB'); const name = file.originalname.replace(/[^A-Za-z0-9._-]/g, '_'); const key = `students/${code.replace(/[^A-Za-z0-9._-]/g, '_')}-${Date.now()}-${name}`; await this.storage.upload({ key, body: file.buffer, contentType: file.mimetype }); return this.storage.getPublicUrl(key); }
   private async cleanupAttachment(url: string): Promise<void> { try { await this.storage.delete(url); } catch { this.logger.warn('Could not compensate newly uploaded student copy attachment.'); } }
-  private mapCommitError(error: unknown): unknown { if ((error as { code?: string })?.code === 'H603' || (error as { code?: string })?.code === 'H604') return error; const pg = error as PgError; if (pg?.code === '23505') return studentCopyException.conflict(studentUniqueMessage(pg.constraint)); if (pg?.code === '23503') return studentCopyException.conflict('class_id không tồn tại'); return error; }
+  private mapPersistenceError(error: unknown): unknown { if ((error as { code?: string })?.code === 'H603' || (error as { code?: string })?.code === 'H604') return error; if (error instanceof StudentCopyUniqueConflictError) return studentCopyException.conflict(this.uniqueMessage(error.field)); if (error instanceof StudentCopyClassReferenceError) return studentCopyException.conflict('class_id không tồn tại'); return error; }
+  private uniqueMessage(field?: StudentCopyUniqueField): string { if (!field) return 'Dữ liệu đã tồn tại (vi phạm ràng buộc UNIQUE)'; return ({ code: 'Mã sinh viên (code) đã tồn tại', email: 'Email đã tồn tại', username: 'Username đã tồn tại' } as const)[field]; }
   private text(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
 }

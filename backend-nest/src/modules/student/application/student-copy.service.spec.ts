@@ -1,5 +1,5 @@
 import { StudentCopyService } from './student-copy.service';
-import type { StudentCopyPersistencePort } from '../domain/student-persistence.port';
+import { StudentCopyClassReferenceError, StudentCopyUniqueConflictError, type StudentCopyPersistencePort } from '../domain/student-persistence.port';
 
 const source = { id: 1, code: 'SV1', fullname: 'One', dob: null, sex: null, homecity: null, address: null, hair_color: null, email: 'one@example.test', facebook: null, class_id: null, username: 'one', password: 'hash-from-source', description: null, hobbies: 0, attachment: 'shared://attachment' };
 const draft = { draftKey: 'student-1', sourceId: 1, values: { code: 'SV1-copy', fullname: 'One', email: 'one-copy@example.test', username: 'one-copy', hobbies: 0, attachment: 'attacker://ignored', password: 'client-hash' } };
@@ -48,5 +48,20 @@ describe('StudentCopyService', () => {
     await expect(service.commit([draft], [{ fieldname: 'attachment-student-1', mimetype: 'image/png', size: 10, buffer: Buffer.from('x'), originalname: 'x.png' }])).rejects.toMatchObject({ code: 'H603' });
     expect(storage.delete).toHaveBeenCalledWith('new://attachment');
     expect(copies.lockActiveSources).not.toHaveBeenCalled();
+  });
+
+  it('maps a persistence unique conflict from copyOne to the existing Copy contract', async () => {
+    const { service } = setup({ findActiveSources: jest.fn().mockResolvedValue([source]), insertCopies: jest.fn().mockRejectedValue(new StudentCopyUniqueConflictError('code')) });
+    await expect(service.copyOne(1)).rejects.toMatchObject({ code: 'H603', message: 'Mã sinh viên (code) đã tồn tại' });
+  });
+
+  it('maps a persistence class reference conflict from copyMany to the existing Copy contract', async () => {
+    const { service } = setup({ findActiveSources: jest.fn().mockResolvedValue([source]), insertCopies: jest.fn().mockRejectedValue(new StudentCopyClassReferenceError()) });
+    await expect(service.copyMany([1])).rejects.toMatchObject({ code: 'H603', message: 'class_id không tồn tại' });
+  });
+
+  it('maps a persistence unique conflict from commit to the existing Copy contract', async () => {
+    const { service } = setup({ lockActiveSources: jest.fn().mockResolvedValue([source]), insertCopies: jest.fn().mockRejectedValue(new StudentCopyUniqueConflictError('email')) });
+    await expect(service.commit([draft])).rejects.toMatchObject({ code: 'H603', message: 'Email đã tồn tại' });
   });
 });

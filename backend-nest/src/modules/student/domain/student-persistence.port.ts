@@ -38,6 +38,17 @@ export interface StudentImportCommit { created: StudentPersistenceRecord[]; upda
 /** Persistence facts and mutations used by the Student copy workflow. */
 export interface StudentCopySource extends StudentCopyValues { id: number; password: string; }
 export interface StudentCopyInsert extends StudentCopyValues { password: string; }
+export type StudentCopyUniqueField = 'code' | 'email' | 'username';
+
+/** Persistence-neutral failures which the copy workflow maps to its API contract. */
+export class StudentCopyUniqueConflictError extends Error {
+  constructor(readonly field?: StudentCopyUniqueField, options?: ErrorOptions) { super('Student copy unique value conflict', options); this.name = new.target.name; }
+}
+
+export class StudentCopyClassReferenceError extends Error {
+  constructor(options?: ErrorOptions) { super('Student copy class reference conflict', options); this.name = new.target.name; }
+}
+
 export interface StudentCopyPersistencePort {
   findActiveSources(ids: number[], transaction?: StudentPersistenceTransaction): Promise<StudentCopySource[]>;
   findOccupiedUniqueValues(values: { code: string[]; username: string[]; email: string[] }, transaction?: StudentPersistenceTransaction): Promise<{ code: string[]; username: string[]; email: string[] }>;
