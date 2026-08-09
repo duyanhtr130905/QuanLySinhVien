@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { PgTransactionManager } from '../../../common/database/pg-transaction-manager';
 import { ForeignKeyViolationError, UniqueConstraintViolationError } from '../../../common/database/errors/database-infrastructure.error';
 import { OBJECT_STORAGE } from '../../../common/storage/storage.tokens';
 import type { ObjectStorage } from '../../../common/storage/object-storage.interface';
@@ -8,14 +7,14 @@ import type { PasswordHasher } from '../../../common/security/password-hasher.in
 import { studentException, studentUniqueMessage } from '../errors/student.errors';
 import type { Student } from '../domain/student.entity';
 import type { StudentWriteInput } from '../domain/student.contracts';
-import { StudentRepository } from '../infrastructure/student.repository';
+import { STUDENT_REPOSITORY, STUDENT_TRANSACTION, type StudentRepositoryPort, type StudentTransactionPort } from '../domain/student-persistence.port';
 
 const allowedImages=new Set(['image/jpeg','image/jpg','image/png']);
 
 @Injectable()
 export class StudentCommandService {
   private readonly logger=new Logger(StudentCommandService.name);
-  constructor(private readonly repository:StudentRepository,private readonly transactions:PgTransactionManager,@Inject(PASSWORD_HASHER) private readonly passwords:PasswordHasher,@Inject(OBJECT_STORAGE) private readonly storage:ObjectStorage){}
+  constructor(@Inject(STUDENT_REPOSITORY) private readonly repository:StudentRepositoryPort,@Inject(STUDENT_TRANSACTION) private readonly transactions:StudentTransactionPort,@Inject(PASSWORD_HASHER) private readonly passwords:PasswordHasher,@Inject(OBJECT_STORAGE) private readonly storage:ObjectStorage){}
   activeHobbyMask(){return this.repository.activeHobbyMask();}
   async create(input:StudentWriteInput,file?:Express.Multer.File):Promise<Student>{let attachment:string|null=null;try{attachment=(await this.upload(file,input.code??'student'))??null;const password=await this.passwords.hash(input.password!);return await this.repository.create({...input,password,attachment});}catch(error){await this.removeNew(attachment);throw this.mapCreate(error);}}
   async update(id:number,input:StudentWriteInput,file?:Express.Multer.File):Promise<Student>{const oldAttachment=file?await this.repository.attachmentOfActive(id):undefined;if(file&&oldAttachment===undefined)throw studentException.updateNotFound();let attachment:string|undefined;let updated=false;try{attachment=await this.upload(file,`id${id}`);const result=await this.transactions.run(async(client)=>{const values:StudentWriteInput={...input};if(values.password==='')delete values.password;else if(values.password!==undefined)values.password=await this.passwords.hash(values.password);if(attachment!==undefined)values.attachment=attachment;return this.repository.updateActive(id,values,client);});if(!result)throw studentException.updateNotFound();updated=true;if(attachment&&oldAttachment&&oldAttachment!==attachment)await this.removeOld(oldAttachment);return result;}catch(error){if(!updated)await this.removeNew(attachment);throw this.mapUpdate(error);}}

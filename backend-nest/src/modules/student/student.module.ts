@@ -12,11 +12,13 @@ import { StudentController } from './http/student.controller';
 import { StudentImageMulterFilter } from './http/student-image-multer.filter';
 import { StudentImportMulterFilter } from './http/student-import-multer.filter';
 import { StudentRequestParser } from './http/student-request.parser';
+import { STUDENT_REPOSITORY, STUDENT_TRANSACTION } from './domain/student-persistence.port';
+import { StudentPgTransactionAdapter } from './infrastructure/student-pg-transaction.adapter';
 import { StudentRepository } from './infrastructure/student.repository';
 
 @Module({
   imports: [DatabaseModule, FilesModule, HttpModule, SecurityModule, StorageModule],
   controllers: [StudentController],
-  providers: [StudentRepository, StudentRequestParser, StudentQueryService, StudentCommandService, StudentCopyService, StudentImportExportService, StudentImageMulterFilter, StudentImportMulterFilter],
+  providers: [StudentRepository, StudentPgTransactionAdapter, { provide: STUDENT_REPOSITORY, useExisting: StudentRepository }, { provide: STUDENT_TRANSACTION, useExisting: StudentPgTransactionAdapter }, StudentRequestParser, StudentQueryService, StudentCommandService, StudentCopyService, StudentImportExportService, StudentImageMulterFilter, StudentImportMulterFilter],
 })
 export class StudentModule {}
