@@ -4,7 +4,7 @@ import { PG_POOL } from '../../../common/database/database.tokens';
 import { PgErrorTranslator } from '../../../common/database/pg-error-translator';
 import type { PgExecutor } from '../../../common/database/pg-executor.type';
 import type { Student } from '../domain/student.entity';
-import type { StudentPageQuery, StudentWriteInput } from '../domain/student.contracts';
+import type { StudentPageQuery, StudentWriteInput } from '../application/student.contracts';
 import type { StudentPersistenceTransaction, StudentRepositoryPort } from '../domain/student-persistence.port';
 
 const columns=['id','code','fullname','dob','sex','homecity','address','hair_color','email','facebook','class_id','username','description','hobbies','attachment','created_at','updated_at','deleted_at'] as const;

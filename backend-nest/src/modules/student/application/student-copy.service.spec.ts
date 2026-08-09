@@ -1,13 +1,13 @@
-import { StudentCopyService } from './student-copy.service';
+import { StudentPostgresCopyAdapter } from '../infrastructure/student-postgres-copy.adapter';
 
 const storage = { upload: jest.fn(), delete: jest.fn(), getPublicUrl: jest.fn() };
 const source = { id: 1, code: 'SV1', fullname: 'One', email: 'one@example.test', username: 'one', password: 'hash-from-source', attachment: 'shared://attachment', hobbies: 0 };
 const draft = { draftKey: 'student-1', sourceId: 1, values: { code: 'SV1-copy', fullname: 'One', email: 'one-copy@example.test', username: 'one-copy', hobbies: 0, attachment: 'attacker://ignored', password: 'client-hash' } };
 
 function transaction(client: { query: jest.Mock }) { return { run: jest.fn(async (work: (value: typeof client) => Promise<unknown>) => work(client)) }; }
-function service(pool: { query: jest.Mock }, client = { query: jest.fn() }) { return { copies: new StudentCopyService(pool as never, transaction(client) as never, storage as never), client }; }
+function service(pool: { query: jest.Mock }, client = { query: jest.fn() }) { return { copies: new StudentPostgresCopyAdapter(pool as never, transaction(client) as never, storage as never), client }; }
 
-describe('StudentCopyService', () => {
+describe('StudentPostgresCopyAdapter', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('previews in two batch reads, de-duplicates source ids, and never exposes password', async () => {

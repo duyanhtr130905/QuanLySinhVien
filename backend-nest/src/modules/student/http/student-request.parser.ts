@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { StudentPageQuery, StudentWriteInput } from '../domain/student.contracts';
-import { StudentWritePolicy } from '../domain/student-write.policy';
+import type { StudentPageQuery, StudentWriteInput } from '../application/student.contracts';
+import { StudentWritePolicy } from '../application/student-write.policy';
 import { studentCopyException, studentException } from '../errors/student.errors';
 import type { StudentPageQueryDto } from './dto/student-page-query.dto';
 
